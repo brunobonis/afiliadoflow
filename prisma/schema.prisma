@@ -1,0 +1,391 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===== WORKSPACES (MULTI-TENANT) =====
+
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  timezone  String   @default("America/Sao_Paulo")
+  currency  String   @default("BRL")
+  planId    String?
+  planLimit Json?    // { users: 5, links: 100, events: 10000, ... }
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users          WorkspaceUser[]
+  shopeeAccounts ShopeeAccount[]
+  metaAccounts   MetaAccount[]
+  products       Product[]
+  links          TrackingLink[]
+  campaigns      Campaign[]
+  adSets         AdSet[]
+  ads            Ad[]
+  sales          Sale[]
+  events         ClickEvent[]
+  auditLogs      AuditLog[]
+
+  @@map("workspaces")
+}
+
+// ===== USERS & PERMISSIONS =====
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  name          String
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  workspaces    WorkspaceUser[]
+  auditLogs     AuditLog[]
+
+  @@map("users")
+}
+
+model WorkspaceUser {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        String   // owner, admin, analyst, reader
+
+  createdAt   DateTime @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@map("workspace_users")
+}
+
+// ===== INTEGRATIONS =====
+
+model ShopeeAccount {
+  id          String   @id @default(cuid())
+  workspaceId String
+
+  accountName String?
+  partnerId   String
+  partnerKey  String   // encrypted
+  shopId      String?
+
+  status      String   @default("pending") // pending, active, error, disconnected
+  lastSyncAt  DateTime?
+  errorMessage String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  products    Product[]
+  sales       Sale[]
+
+  @@map("shopee_accounts")
+}
+
+model MetaAccount {
+  id            String   @id @default(cuid())
+  workspaceId   String
+
+  accountId     String
+  accountName   String
+  accessToken   String   // encrypted
+  tokenExpiresAt DateTime
+
+  adAccountIds  Json     // array of selected ad account IDs
+  permissions   Json?    // granted permissions
+
+  status        String   @default("active") // active, expired, revoked
+  lastSyncAt    DateTime?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaigns     Campaign[]
+
+  @@unique([workspaceId, accountId])
+  @@map("meta_accounts")
+}
+
+// ===== PRODUCTS & LINKS =====
+
+model Product {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  shopeeAccountId String?
+
+  externalId      String?  // Shopee product ID
+  name            String
+  imageUrl        String?
+  price           Float?
+  commission      Float?
+  commissionRate  Float?   // percentage
+
+  status          String   @default("active") // active, inactive
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastSyncAt      DateTime?
+
+  workspace       Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  shopeeAccount   ShopeeAccount? @relation(fields: [shopeeAccountId], references: [id], onDelete: SetNull)
+  links           TrackingLink[]
+  sales           Sale[]
+
+  @@index([workspaceId, externalId])
+  @@map("products")
+}
+
+model TrackingLink {
+  id          String   @id @default(cuid())
+  workspaceId String
+  productId   String?
+  campaignId  String?
+
+  shortCode   String   @unique
+  destination String   // original Shopee affiliate link
+  nickname    String?  // optional user-friendly name
+
+  // Auto-enrichment from Shopee API (when available)
+  productName String?
+  productImage String?
+  shopName    String?
+
+  // Optional UTMs for organized tracking
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmContent  String?
+  utmTerm     String?
+
+  status      String   @default("active") // active, paused, archived
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  lastAccessAt DateTime? // last click timestamp
+
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  product     Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+  campaign    Campaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  events      ClickEvent[]
+  sales       Sale[]
+
+  @@index([workspaceId, shortCode])
+  @@map("tracking_links")
+}
+
+// ===== CAMPAIGNS =====
+
+model Campaign {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  metaAccountId String?
+
+  externalId    String?  // Meta campaign ID (auto-imported)
+  name          String
+  platform      String   // meta, organic, direct, other
+
+  status        String   @default("active")
+  objective     String?  // Meta campaign objective
+
+  // Imported metrics from Meta
+  budget        Float?
+  spent         Float?
+  impressions   Int?
+  clicks        Int?
+  reach         Int?
+
+  startDate     DateTime?
+  endDate       DateTime?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastSyncAt    DateTime?
+
+  // Meta raw data
+  metaData      Json?    // Store full campaign object from Meta API
+
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  metaAccount   MetaAccount?  @relation(fields: [metaAccountId], references: [id], onDelete: SetNull)
+  links         TrackingLink[]
+  adSets        AdSet[]
+
+  @@index([workspaceId, externalId])
+  @@map("campaigns")
+}
+
+// New: Ad Sets imported from Meta
+model AdSet {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  campaignId    String
+
+  externalId    String   // Meta adset ID
+  name          String
+  status        String
+
+  budget        Float?
+  spent         Float?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastSyncAt    DateTime?
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaign      Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  ads           Ad[]
+
+  @@index([workspaceId, externalId])
+  @@map("ad_sets")
+}
+
+// New: Ads imported from Meta
+model Ad {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  adSetId       String
+
+  externalId    String   // Meta ad ID
+  name          String
+  status        String
+
+  creative      Json?    // Creative data
+
+  // Detected links in ad
+  detectedUrls  Json?    // Array of URLs found in ad
+
+  // Metrics
+  impressions   Int?
+  clicks        Int?
+  spent         Float?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastSyncAt    DateTime?
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  adSet         AdSet    @relation(fields: [adSetId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, externalId])
+  @@map("ads")
+}
+
+// ===== TRACKING & SALES =====
+
+model ClickEvent {
+  id          String   @id @default(cuid())
+  workspaceId String
+  linkId      String
+
+  // Request data
+  ip          String?
+  userAgent   String?
+  referer     String?
+
+  // URL parameters received
+  urlParams   Json?    // All query parameters including UTMs, fbclid, etc
+
+  // Device detection
+  device      String?  // mobile, desktop, tablet, unknown
+  browser     String?
+  os          String?
+
+  // Location (when available)
+  country     String?
+  city        String?
+
+  // Origin classification
+  originType  String?  // direct, meta_ad, organic_social, search, unknown
+  originConfidence String? // confirmed, inferred, unknown
+
+  // Meta Ads tracking (when present in URL)
+  fbclid      String?
+
+  // Bot detection
+  isBot       Boolean  @default(false)
+
+  clickedAt   DateTime @default(now())
+
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  link        TrackingLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, linkId, clickedAt])
+  @@index([workspaceId, clickedAt])
+  @@map("click_events")
+}
+
+model Sale {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  shopeeAccountId String?
+  productId       String?
+  linkId          String?
+
+  externalId      String?  // Shopee order ID
+  orderNumber     String?
+  subId           String?  // Sub_id used for attribution (from Shopee)
+
+  amount          Float
+  commission      Float
+  quantity        Int      @default(1)
+  status          String   // pending, confirmed, cancelled
+
+  // Attribution info
+  attributionSource String? // shopee_subid, manual_link, unattributed
+
+  // Product info (imported from Shopee)
+  productName     String?
+  productImage    String?
+  shopName        String?
+
+  purchasedAt     DateTime
+  confirmedAt     DateTime?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Shopee raw data
+  shopeeData      Json?
+
+  workspace       Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  shopeeAccount   ShopeeAccount? @relation(fields: [shopeeAccountId], references: [id], onDelete: SetNull)
+  product         Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+  link            TrackingLink?  @relation(fields: [linkId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, externalId])
+  @@index([workspaceId, purchasedAt])
+  @@index([workspaceId, subId])
+  @@map("sales")
+}
+
+// ===== AUDIT & LOGS =====
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String?
+
+  action      String   // integration_connected, link_created, user_invited, etc
+  resource    String   // shopee_account, tracking_link, workspace_user, etc
+  resourceId  String?
+  details     Json?
+
+  createdAt   DateTime @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@map("audit_logs")
+}

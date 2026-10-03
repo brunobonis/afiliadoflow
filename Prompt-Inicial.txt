@@ -1,0 +1,161 @@
+# Complemento ao briefing — Plataforma comercial e integrações no painel
+
+## 1. Estrutura do produto
+
+O Afiliada Insights deve ser desenvolvido como uma plataforma SaaS, preparada para comercialização por assinatura.
+
+Fabiana será a primeira cliente da plataforma, utilizando a mesma estrutura destinada aos futuros clientes.
+
+Cada cliente terá seu próprio espaço de trabalho, com usuários, contas conectadas, produtos, links, anúncios, vendas, relatórios e configurações independentes.
+
+## 2. Menu Integrações
+
+Disponibilizar um menu “Integrações” acessível aos administradores do cliente, permitindo conectar e gerenciar suas contas sem editar código ou arquivos do sistema.
+
+### Shopee Afiliados
+
+- Configuração guiada das credenciais exigidas pela API.
+- Instruções para localizar ou solicitar essas credenciais.
+- Campos protegidos para informações secretas.
+- Botão “Testar conexão”.
+- Identificação da conta conectada, quando disponível.
+- Situação da conexão e permissões verificadas.
+- Progresso da importação inicial.
+- Data da última sincronização.
+- Botões para sincronizar, atualizar credenciais e desconectar.
+
+### Meta Ads
+
+- Fluxo oficial de autorização, preferencialmente pelo botão “Conectar com Facebook”.
+- Seleção das contas de anúncios autorizadas.
+- Exibição das permissões concedidas e das contas selecionadas.
+- Situação da conexão e da sincronização.
+- Orientação para renovar uma autorização expirada ou revogada.
+- Opção para desconectar.
+
+A configuração do aplicativo da plataforma na Meta será responsabilidade do administrador do SaaS. O cliente deverá apenas autorizar o acesso às suas contas, respeitando as exigências de aprovação e permissões da Meta.
+
+### Experiência de configuração
+
+Cada integração deve apresentar estados claros:
+
+- Não conectada.
+- Em configuração.
+- Conectada.
+- Importando histórico.
+- Sincronização concluída.
+- Ação necessária.
+- Falha de conexão.
+
+Erros devem ser explicados em linguagem simples, com indicação do próximo passo. O painel não deve declarar sucesso antes de validar a conexão.
+
+## 3. Separação entre clientes
+
+O isolamento dos dados deve existir no servidor, no banco de dados, nos arquivos e nas tarefas de sincronização.
+
+Um cliente não poderá acessar dados de outro, mesmo alterando endereços ou identificadores em requisições.
+
+Cada conexão deve pertencer explicitamente a um espaço de trabalho. Links públicos devem possuir identificadores únicos e registrar acessos no cliente correto.
+
+Credenciais não poderão ser compartilhadas entre clientes nem aparecer em relatórios, registros de erro ou respostas enviadas ao navegador.
+
+## 4. Usuários e permissões
+
+Prever os seguintes perfis:
+
+- **Proprietário:** gerencia assinatura, usuários, integrações e configurações.
+- **Administrador:** gerencia a operação e as integrações, conforme autorização.
+- **Analista:** consulta relatórios e trabalha com produtos e links.
+- **Leitor:** acessa somente as informações permitidas para consulta.
+
+As permissões devem ser verificadas no servidor. Registrar alterações relevantes, como conexão de contas, mudança de permissões e edição de destinos de links.
+
+## 5. Cadastro e início de uso
+
+O fluxo de entrada deverá permitir:
+
+1. Criar uma conta.
+2. Criar o espaço de trabalho.
+3. Definir fuso horário e moeda de apresentação.
+4. Conectar a Shopee.
+5. Conectar a Meta e selecionar as contas.
+6. Acompanhar a importação dos dados.
+7. Gerar o primeiro link rastreável.
+8. Acessar o dashboard.
+
+Caso uma integração ainda não esteja disponível, o sistema deverá explicar quais recursos já podem ser usados e quais dependem da conexão.
+
+## 6. Planos e assinatura
+
+Preparar a estrutura para planos configuráveis, sem preços fixos definidos neste briefing.
+
+Os planos poderão limitar:
+
+- Quantidade de usuários.
+- Contas Shopee e Meta conectadas.
+- Links ativos.
+- Volume de eventos rastreados.
+- Período de retenção dos dados.
+- Frequência de sincronização.
+- Relatórios e recursos avançados.
+
+O controle dos limites deverá ocorrer no servidor.
+
+Prever integração com um provedor de cobrança para assinatura, renovação, cancelamento e tratamento de pagamentos, sem armazenar dados de cartão diretamente.
+
+Definir uma política explícita para inadimplência, cancelamento e excesso de uso. **O vencimento da assinatura não deverá quebrar silenciosamente links já publicados:** redirecionamento, rastreamento e acesso ao painel terão regras próprias, informadas ao cliente.
+
+## 7. Administração da plataforma
+
+Criar uma área exclusiva para o operador do SaaS, separada do painel dos clientes, com:
+
+- Gestão de clientes, planos e assinaturas.
+- Acompanhamento de uso e limites.
+- Estado das integrações e sincronizações.
+- Monitoramento de falhas e filas de processamento.
+- Configurações gerais da plataforma.
+- Registro de ações administrativas.
+
+Qualquer acesso de suporte aos dados de um cliente deverá ser restrito e auditável.
+
+## 8. Operação e crescimento
+
+A arquitetura deverá suportar múltiplos clientes desde o início, incluindo:
+
+- Processamento de sincronizações em segundo plano.
+- Limites e filas que evitem que um cliente prejudique os demais.
+- Tratamento de limites das APIs por aplicativo e por conta.
+- Armazenamento seguro de credenciais.
+- Monitoramento, backups e recuperação.
+- Exportação e exclusão de dados conforme políticas definidas.
+- Domínio padrão para links rastreáveis, com possibilidade futura de domínio próprio por cliente.
+
+O serviço de redirecionamento deve continuar independente da disponibilidade do dashboard e das APIs externas.
+
+## 9. Organização sugerida do menu
+
+- Visão geral
+- Produtos e links
+- Campanhas e anúncios
+- Vendas e comissões
+- Relatórios
+- Oportunidades
+- **Integrações**
+- Equipe e permissões
+- Plano e cobrança
+- Configurações
+
+## 10. Critérios adicionais de aceite
+
+A plataforma estará estruturalmente preparada para comercialização quando:
+
+- Dois clientes conseguirem operar sem acesso aos dados um do outro.
+- Cada cliente conseguir configurar suas integrações pelo painel.
+- Credenciais permanecerem protegidas e vinculadas ao cliente correto.
+- Permissões e limites de plano forem aplicados no servidor.
+- As sincronizações funcionarem de forma independente por cliente.
+- O administrador da plataforma conseguir acompanhar a operação.
+- O comportamento dos links após suspensão ou cancelamento estiver definido e testado.
+- O produto não depender de credenciais, nomes ou configurações fixas da Fabiana no código.
+
+As aprovações exigidas pelas plataformas para atender contas de terceiros deverão ser verificadas antes do lançamento comercial.
