@@ -90,9 +90,20 @@ async function main() {
     )
   )
 
-  // 2. Campos do ConversionReport, que e o que vira venda no nosso banco.
+  // 2. Mutations: e aqui que mora a geracao de link com sub_id, que e o que
+  // torna possivel cruzar venda da Shopee com anuncio do Meta.
   show(
-    '2. CAMPOS DE ConversionReport',
+    '2. MUTATIONS DISPONIVEIS',
+    await call(
+      appId,
+      secret,
+      `{ __type(name: "Mutation") { fields { name args { name type { kind name ofType { kind name } } } } } }`
+    )
+  )
+
+  // 3. Campos do ConversionReport, que e o que vira venda no nosso banco.
+  show(
+    '3. CAMPOS DE ConversionReport',
     await call(
       appId,
       secret,
@@ -102,7 +113,7 @@ async function main() {
 
   // 3. O envelope paginado.
   show(
-    '3. CAMPOS DE ConversionReportConnection',
+    '4. CAMPOS DE ConversionReportConnection',
     await call(
       appId,
       secret,
@@ -112,7 +123,7 @@ async function main() {
 
   // 4. Os itens de cada pedido.
   show(
-    '4. CAMPOS DE ConversionReportOrder',
+    '5. CAMPOS DE ConversionReportOrder',
     await call(
       appId,
       secret,
