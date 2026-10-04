@@ -5,6 +5,17 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'dev-secret-change-in-production-123456789'
 )
 
+export const MIN_PASSWORD_LENGTH = 8
+
+// Roles the schema documents, from most to least privileged.
+export const ROLES = ['owner', 'admin', 'analyst', 'reader'] as const
+
+// The owner creates the workspace, so locking them out of team management
+// would leave a workspace nobody can administer.
+export function canManageTeam(role: string | undefined) {
+  return role === 'owner' || role === 'admin'
+}
+
 export interface TokenPayload extends JWTPayload {
   userId: string
   email: string

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { requireAuth } from '@/lib/auth'
+import { requireAuth, canManageTeam, ROLES } from '@/lib/auth'
 
 export async function GET(request: NextRequest) {
   try {
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    if (requester?.role !== 'admin') {
+    if (!canManageTeam(requester?.role)) {
       return NextResponse.json(
         { error: 'Apenas administradores podem adicionar membros' },
         { status: 403 }
@@ -80,7 +80,9 @@ export async function POST(request: NextRequest) {
       data: {
         workspaceId: session.workspaceId,
         userId: user.id,
-        role: body.role || 'member',
+        // 'member' was not one of the roles the schema defines, so every
+        // permission check rejected it. Default to the least privileged.
+        role: ROLES.includes(body.role) ? body.role : 'reader',
       },
       include: {
         user: {

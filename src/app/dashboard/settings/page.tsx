@@ -1,6 +1,17 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import ChangePasswordForm from '@/components/ChangePasswordForm'
+
+// These sections are still mock-ups: the inputs hold no real data and the
+// buttons are not wired to any endpoint. The badge keeps that visible.
+function NotImplemented() {
+  return (
+    <span className="text-xs font-normal px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30">
+      não implementado
+    </span>
+  )
+}
 
 interface Workspace {
   id: string
@@ -46,9 +57,13 @@ export default function SettingsPage() {
         <p className="text-slate-400 mt-1">Gerencie workspace e preferências</p>
       </div>
 
+      <ChangePasswordForm />
+
       {/* Workspace Settings */}
       <div className="bg-[#1E293B] rounded-lg border border-slate-800 p-6">
-        <h2 className="text-lg font-semibold text-white mb-4">Workspace</h2>
+        <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+          Workspace <NotImplemented />
+        </h2>
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-2">
@@ -83,14 +98,16 @@ export default function SettingsPage() {
 
       {/* Profile Settings */}
       <div className="bg-[#1E293B] rounded-lg border border-slate-800 p-6">
-        <h2 className="text-lg font-semibold text-white mb-4">Perfil</h2>
+        <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+          Perfil <NotImplemented />
+        </h2>
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-2">Nome</label>
             <input
               type="text"
-              defaultValue="Fabiana Silva"
-              className="w-full px-4 py-2 bg-[#0F172A] border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#38BDF8]"
+              placeholder="Seu nome"
+              className="w-full px-4 py-2 bg-[#0F172A] border border-slate-700 rounded-lg text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-[#38BDF8]"
             />
           </div>
 
@@ -98,8 +115,8 @@ export default function SettingsPage() {
             <label className="block text-sm font-medium text-slate-300 mb-2">Email</label>
             <input
               type="email"
-              defaultValue="fabiana@demo.com"
-              className="w-full px-4 py-2 bg-[#0F172A] border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#38BDF8]"
+              placeholder="seu@email.com"
+              className="w-full px-4 py-2 bg-[#0F172A] border border-slate-700 rounded-lg text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-[#38BDF8]"
             />
           </div>
 
@@ -111,7 +128,9 @@ export default function SettingsPage() {
 
       {/* Notifications */}
       <div className="bg-[#1E293B] rounded-lg border border-slate-800 p-6">
-        <h2 className="text-lg font-semibold text-white mb-4">Notificações</h2>
+        <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+          Notificações <NotImplemented />
+        </h2>
         <div className="space-y-4">
           <label className="flex items-center gap-3">
             <input
@@ -149,7 +168,9 @@ export default function SettingsPage() {
 
       {/* Danger Zone */}
       <div className="bg-[#1E293B] rounded-lg border border-red-900/50 p-6">
-        <h2 className="text-lg font-semibold text-red-400 mb-4">Zona de Perigo</h2>
+        <h2 className="text-lg font-semibold text-red-400 mb-4 flex items-center gap-2">
+          Zona de Perigo <NotImplemented />
+        </h2>
         <div className="space-y-4">
           <div>
             <h3 className="text-sm font-medium text-white mb-1">Excluir Workspace</h3>

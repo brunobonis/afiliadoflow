@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { getSession } from '@/lib/auth'
 import { FilterProvider } from '@/components/FilterContext'
 import { ToastProvider } from '@/components/ToastProvider'
+import LogoutButton from '@/components/LogoutButton'
 
 export default async function DashboardLayout({
   children,
@@ -53,6 +54,7 @@ export default async function DashboardLayout({
               <p className="text-sm text-white font-medium truncate">{session.email}</p>
               <p className="text-xs text-slate-400 capitalize">{session.role}</p>
             </div>
+            <LogoutButton />
           </div>
         </div>
       </aside>

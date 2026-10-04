@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { requireAuth } from '@/lib/auth'
+import { requireAuth, canManageTeam } from '@/lib/auth'
 
 export async function PATCH(
   request: NextRequest,
@@ -19,7 +19,7 @@ export async function PATCH(
       },
     })
 
-    if (requester?.role !== 'admin') {
+    if (!canManageTeam(requester?.role)) {
       return NextResponse.json(
         { error: 'Apenas administradores podem alterar permissões' },
         { status: 403 }
@@ -65,7 +65,7 @@ export async function DELETE(
       },
     })
 
-    if (requester?.role !== 'admin') {
+    if (!canManageTeam(requester?.role)) {
       return NextResponse.json(
         { error: 'Apenas administradores podem remover membros' },
         { status: 403 }
