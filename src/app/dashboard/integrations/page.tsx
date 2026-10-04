@@ -6,9 +6,11 @@ import ManageMetaModal from './ManageMetaModal'
 
 interface ShopeeAccount {
   id: string
-  accountName: string
-  partnerId: string
+  accountName: string | null
+  appId: string | null
   status: string
+  errorMessage?: string | null
+  lastSyncAt?: string | null
 }
 
 export default function IntegrationsPage() {
@@ -30,8 +32,11 @@ export default function IntegrationsPage() {
       ])
       const shopeeData = await shopeeRes.json()
       const metaData = await metaRes.json()
-      setShopeeAccounts(shopeeData)
-      setMetaAccounts(metaData)
+
+      // Em erro (401, por exemplo) a API devolve um objeto, e um .map() depois
+      // quebraria a tela inteira em vez de só mostrar a lista vazia.
+      setShopeeAccounts(Array.isArray(shopeeData) ? shopeeData : [])
+      setMetaAccounts(Array.isArray(metaData) ? metaData : [])
     } catch (error) {
       console.error('Error loading integrations:', error)
     } finally {
