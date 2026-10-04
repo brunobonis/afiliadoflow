@@ -55,6 +55,7 @@ export default function ManageShopeeModal({
   const [appId, setAppId] = useState('')
   const [appSecret, setAppSecret] = useState('')
   const [error, setError] = useState('')
+  const [errorDetail, setErrorDetail] = useState('')
   const [loading, setLoading] = useState(false)
   const [syncingId, setSyncingId] = useState<string | null>(null)
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null)
@@ -64,11 +65,13 @@ export default function ManageShopeeModal({
     setAppId('')
     setAppSecret('')
     setError('')
+    setErrorDetail('')
   }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+    setErrorDetail('')
     setLoading(true)
 
     try {
@@ -84,6 +87,7 @@ export default function ManageShopeeModal({
       // a sucesso, e a conta simplesmente não aparecia, sem explicação.
       if (!res.ok) {
         setError(data.error || 'Erro ao adicionar conta')
+        setErrorDetail(data.detail ? JSON.stringify(data.detail, null, 2) : '')
         return
       }
 
@@ -101,6 +105,7 @@ export default function ManageShopeeModal({
     setSyncingId(id)
     setSyncResult(null)
     setError('')
+    setErrorDetail('')
 
     try {
       const res = await fetch(`/api/integrations/shopee/${id}/sync?days=30`, { method: 'POST' })
@@ -155,8 +160,18 @@ export default function ManageShopeeModal({
 
         <div className="p-6 space-y-4">
           {error && (
-            <div className="bg-red-500/10 border border-red-500/50 text-red-400 px-4 py-3 rounded text-sm">
-              {error}
+            <div className="bg-red-500/10 border border-red-500/50 text-red-400 px-4 py-3 rounded text-sm space-y-2">
+              <p>{error}</p>
+              {errorDetail && (
+                <details>
+                  <summary className="cursor-pointer text-xs text-red-300/80">
+                    Ver resposta completa da Shopee
+                  </summary>
+                  <pre className="mt-2 text-[10px] leading-relaxed text-slate-300 bg-[#0F172A] p-3 rounded overflow-x-auto max-h-64">
+                    {errorDetail}
+                  </pre>
+                </details>
+              )}
             </div>
           )}
 

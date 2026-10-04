@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { decryptSecret } from '@/lib/crypto'
 import {
   shopeeGraphQL,
+  ShopeeApiError,
   parseMoney,
   parseEpochSeconds,
   type ShopeeCredentials,
@@ -85,21 +86,53 @@ function mapStatus(conversionStatus: string): string {
   return 'pending'
 }
 
+/** Erro de validação da consulta, não de credencial — vale tentar outra forma. */
+function isTypeError(error: unknown): boolean {
+  return (
+    error instanceof ShopeeApiError &&
+    /wrong type|invalid type|cannot represent|expected type/i.test(error.message)
+  )
+}
+
 export async function fetchConversions(
   credentials: ShopeeCredentials,
   start: Date,
   end: Date
 ): Promise<ConversionNode[]> {
-  const data = await shopeeGraphQL<{ conversionReport: { nodes: ConversionNode[] } }>(
-    credentials,
-    CONVERSION_REPORT_QUERY,
-    {
-      start: Math.floor(start.getTime() / 1000),
-      end: Math.floor(end.getTime() / 1000),
-    }
-  )
+  const inicio = Math.floor(start.getTime() / 1000)
+  const fim = Math.floor(end.getTime() / 1000)
 
-  return data.conversionReport?.nodes || []
+  /**
+   * A Shopee declara purchaseTimeStart/End como o escalar Int64, e a forma
+   * aceita não está documentada: algumas APIs exigem string, para não perder
+   * precisão em 64 bits, e outras exigem número. Em vez de fixar um palpite,
+   * tenta string e, se o erro for de tipo, repete com número.
+   */
+  const tentativas: Array<Record<string, unknown>> = [
+    { start: String(inicio), end: String(fim) },
+    { start: inicio, end: fim },
+  ]
+
+  let ultimoErro: unknown
+
+  for (const variables of tentativas) {
+    try {
+      const data = await shopeeGraphQL<{ conversionReport: { nodes: ConversionNode[] } }>(
+        credentials,
+        CONVERSION_REPORT_QUERY,
+        variables
+      )
+
+      return data.conversionReport?.nodes || []
+    } catch (error) {
+      ultimoErro = error
+
+      // Credencial, permissão ou limite não melhoram com outra codificação.
+      if (!isTypeError(error)) throw error
+    }
+  }
+
+  throw ultimoErro
 }
 
 export function credentialsOf(account: {

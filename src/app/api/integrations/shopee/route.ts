@@ -69,10 +69,18 @@ export async function POST(request: NextRequest) {
       await fetchConversions({ appId, appSecret }, inicio, fim)
     } catch (error) {
       if (error instanceof ShopeeApiError) {
+        // "wrong type" e afins são erro de validação da consulta, não de
+        // credencial: dizer "credenciais recusadas" mandaria você conferir
+        // AppId e Secret que estão corretos.
+        const credencial = error.code !== undefined
+
         return NextResponse.json(
           {
-            error: `A Shopee recusou estas credenciais: ${error.message}`,
+            error: credencial
+              ? `A Shopee recusou estas credenciais: ${error.message}`
+              : `A Shopee recusou a consulta (não é problema de credencial): ${error.message}`,
             code: error.code,
+            detail: error.detail,
           },
           { status: 400 }
         )
