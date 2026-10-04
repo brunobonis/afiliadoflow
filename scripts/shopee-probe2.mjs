@@ -161,6 +161,21 @@ async function main() {
     printType(nome, await introspect(nome))
   }
 
+  /**
+   * Segue a cadeia em vez de adivinhar: o tipo dos itens do pedido nao se
+   * chama ConversionReportItem, e e nele que esta o nome do produto.
+   */
+  const pedido = await introspect('ConversionReportOrder')
+  printType('ConversionReportOrder', pedido)
+
+  const itens = pedido?.fields?.find((f) => f.name === 'items')
+  const tipoItem = typeName(itens?.type).replace(/[[\]!]/g, '')
+
+  if (tipoItem && tipoItem !== '?') {
+    console.log(`\n(itens do pedido sao do tipo ${tipoItem}, consultando...)`)
+    printType(tipoItem, await introspect(tipoItem))
+  }
+
   console.log('\nPronto. Cole a saida no chat.')
 }
 
