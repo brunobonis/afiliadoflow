@@ -76,8 +76,16 @@ model ShopeeAccount {
   workspaceId String
 
   accountName String?
+
+  // Affiliate Open API: AppId + Secret, obtidos em affiliate.shopee.com.br.
+  appId       String?
+  appSecret   String?  @db.Text // cifrado com AES-256-GCM, ver lib/crypto.ts
+
+  // Legado da Open Platform de vendedores (partner/shop), que nao e a API de
+  // afiliados. Mantidos NOT NULL no banco por ora e gravados vazios; migrar
+  // para nullable quando nao houver mais nada lendo daqui.
   partnerId   String
-  partnerKey  String   // encrypted
+  partnerKey  String
   shopId      String?
 
   status      String   @default("pending") // pending, active, error, disconnected
