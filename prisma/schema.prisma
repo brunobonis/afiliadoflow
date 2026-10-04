@@ -360,6 +360,12 @@ model Sale {
   device            String?  // APP, WEB
   buyerType         String?  // NEW, EXISTING
 
+  // Vem por item, nao pela conversao: channelType e a origem detalhada
+  // (video, redes sociais) e attributionType diz como a venda foi atribuida.
+  channelType       String?
+  attributionType   String?
+  categoryName      String?
+
   // Product info (imported from Shopee)
   productName     String?
   productImage    String?

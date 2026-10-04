@@ -9,12 +9,12 @@ import {
 } from '@/lib/shopee'
 
 /**
- * Só campos que a introspecção da API confirmou existir. GraphQL exige nomear
- * cada campo, e um nome inventado derruba a query inteira — então nada entra
- * aqui sem ter aparecido na sonda.
+ * Só campos que a introspecção confirmou existir. GraphQL exige nomear cada
+ * campo, e um nome inventado derruba a consulta inteira.
  *
- * Ainda de fora, por falta de confirmação: pageInfo (paginação) e os campos
- * de ConversionReportOrder.items.
+ * pageInfo traz apenas scrollId: limit e hasNextPage são declarados não nulos
+ * mas voltam null, e selecioná-los faz a resposta inteira falhar com
+ * "got null for non-null".
  */
 const CONVERSION_REPORT_QUERY = `
   query ConversionReport($start: Int64, $end: Int64, $limit: Int, $scrollId: String) {
@@ -35,8 +35,6 @@ const CONVERSION_REPORT_QUERY = `
         conversionStatus
         totalCommission
         netCommission
-        sellerCommission
-        shopeeCommissionCapped
         buyerType
         device
         productType
@@ -46,11 +44,59 @@ const CONVERSION_REPORT_QUERY = `
           orderId
           orderStatus
           shopType
+          items {
+            itemId
+            modelId
+            itemName
+            imageUrl
+            shopName
+            qty
+            itemPrice
+            actualAmount
+            refundAmount
+            itemTotalCommission
+            itemCommission
+            completeTime
+            displayItemStatus
+            categoryLv1Name
+            channelType
+            attributionType
+            campaignType
+            campaignPartnerName
+          }
         }
       }
     }
   }
 `
+
+interface ConversionItem {
+  itemId: string | number
+  modelId: string | number
+  itemName: string
+  imageUrl: string
+  shopName: string
+  qty: number
+  itemPrice: string
+  actualAmount: string
+  refundAmount: string
+  itemTotalCommission: string
+  itemCommission: string
+  completeTime: number
+  displayItemStatus: string
+  categoryLv1Name: string | null
+  channelType: string
+  attributionType: string
+  campaignType: string
+  campaignPartnerName: string
+}
+
+interface ConversionOrder {
+  orderId: string
+  orderStatus?: string
+  shopType?: string
+  items?: ConversionItem[]
+}
 
 interface ConversionNode {
   conversionId: string | number
@@ -60,14 +106,12 @@ interface ConversionNode {
   conversionStatus: string
   totalCommission: string
   netCommission: string
-  sellerCommission: string
-  shopeeCommissionCapped: string
   buyerType: string
   device: string
   productType: string
   referrer: string
   utmContent: string
-  orders?: Array<{ orderId: string; orderStatus?: string; shopType?: string }>
+  orders?: ConversionOrder[]
 }
 
 export interface SyncResult {
@@ -82,18 +126,16 @@ export interface SyncResult {
   sample: ConversionNode | null
 }
 
-/**
- * A Shopee confirma a comissão depois da compra, então o mesmo conversionId
- * reaparece com outro status e outro valor. Gravar por insert duplicaria a
- * venda a cada sincronização; a chave é o conversionId.
- */
-function mapStatus(conversionStatus: string): string {
-  const normalized = (conversionStatus || '').toLowerCase()
+const PAGE_SIZE = 100
 
-  if (normalized.includes('cancel') || normalized.includes('invalid')) return 'cancelled'
-  if (normalized.includes('complet') || normalized.includes('confirm')) return 'confirmed'
+/** Trava contra laço infinito caso o cursor nunca termine. */
+const MAX_PAGES = 50
 
-  return 'pending'
+interface ConversionPage {
+  conversionReport: {
+    pageInfo: { scrollId: string | null } | null
+    nodes: ConversionNode[]
+  }
 }
 
 /** Erro de validação da consulta, não de credencial — vale tentar outra forma. */
@@ -104,18 +146,6 @@ function isTypeError(error: unknown): boolean {
   )
 }
 
-const PAGE_SIZE = 100
-
-/** Trava contra laço infinito caso hasNextPage nunca vire false. */
-const MAX_PAGES = 50
-
-interface ConversionPage {
-  conversionReport: {
-    pageInfo: { scrollId: string | null } | null
-    nodes: ConversionNode[]
-  }
-}
-
 async function fetchPage(
   credentials: ShopeeCredentials,
   start: number,
@@ -123,10 +153,9 @@ async function fetchPage(
   scrollId: string | null
 ): Promise<ConversionPage['conversionReport']> {
   /**
-   * purchaseTimeStart/End são o escalar Int64, e a forma aceita não está
-   * documentada: há APIs que exigem string, para não perder precisão em 64
-   * bits, e outras que exigem número. Em produção a string funcionou, mas o
-   * fallback fica porque a alternativa é falhar inteiro por uma suposição.
+   * purchaseTimeStart/End são o escalar Int64 e a forma aceita não está
+   * documentada. Em produção a string funcionou, mas o fallback fica porque a
+   * alternativa é falhar inteiro por uma suposição.
    */
   const tentativas: Array<Record<string, unknown>> = [
     { start: String(start), end: String(end), limit: PAGE_SIZE, scrollId },
@@ -158,9 +187,9 @@ async function fetchPage(
 /**
  * Percorre todas as páginas antes de devolver.
  *
- * O scrollId da Shopee vale ~30 segundos, então nada de gravar no banco entre
- * uma página e outra: a escrita atrasaria a próxima chamada e o cursor
- * expiraria no meio da coleta, truncando o resultado sem erro visível.
+ * O scrollId da Shopee vale cerca de 30 segundos, então nada de gravar no
+ * banco entre uma página e outra: a escrita atrasaria a próxima chamada e o
+ * cursor expiraria no meio da coleta, truncando sem erro visível.
  */
 export async function fetchConversions(
   credentials: ShopeeCredentials,
@@ -178,21 +207,12 @@ export async function fetchConversions(
     const recebidos = resultado.nodes || []
 
     nodes.push(...recebidos)
-
-    /**
-     * Deduz o fim pela quantidade em vez de ler pageInfo.hasNextPage: a Shopee
-     * devolve null nesse campo mesmo declarando-o Boolean!, e a consulta
-     * inteira falha com "got null for non-null". Página incompleta significa
-     * que acabou; página cheia sem scrollId também, porque não há como pedir
-     * a próxima.
-     */
     scrollId = resultado.pageInfo?.scrollId ?? null
 
     if (recebidos.length < PAGE_SIZE) return { nodes, truncated: false }
     if (!scrollId) return { nodes, truncated: true }
   }
 
-  // Bateu no teto: melhor avisar do que devolver um total errado em silêncio.
   return { nodes, truncated: true }
 }
 
@@ -205,6 +225,63 @@ export function credentialsOf(account: {
   }
 
   return { appId: account.appId, appSecret: decryptSecret(account.appSecret) }
+}
+
+function mapStatus(status: string): string {
+  const normalized = (status || '').toLowerCase()
+
+  if (normalized.includes('cancel') || normalized.includes('invalid')) return 'cancelled'
+  if (normalized.includes('complet') || normalized.includes('confirm')) return 'confirmed'
+
+  return 'pending'
+}
+
+/**
+ * Uma linha por item comprado, não por conversão.
+ *
+ * Uma conversão pode conter vários pedidos e cada pedido vários produtos, e é
+ * no item que vivem itemName, qty, preço, categoria e channelType. Gravar por
+ * conversão deixava "qual produto vendeu" sem resposta, que é justamente a
+ * pergunta do relatório.
+ */
+function linhasDe(node: ConversionNode, workspaceId: string, shopeeAccountId: string) {
+  const conversionId = String(node.conversionId)
+  const purchasedAt = parseEpochSeconds(node.purchaseTime) ?? new Date()
+  const subId = node.utmContent || null
+
+  const origem = subId ? 'shopee_subid' : node.referrer ? 'shopee_referrer' : 'unattributed'
+
+  return (node.orders || []).flatMap((order) =>
+    (order.items || []).map((item) => ({
+      // Chave estável por item: a mesma conversão reaparece quando a comissão
+      // confirma, e sem o item na chave cada sincronização duplicaria tudo.
+      externalId: `${conversionId}:${order.orderId}:${item.itemId}:${item.modelId}`,
+      payload: {
+        workspaceId,
+        shopeeAccountId,
+        orderNumber: order.orderId,
+        subId,
+        amount: parseMoney(item.actualAmount),
+        commission: parseMoney(item.itemTotalCommission ?? item.itemCommission),
+        quantity: Number(item.qty) || 1,
+        status: mapStatus(item.displayItemStatus || node.conversionStatus),
+        attributionSource: origem,
+        productName: item.itemName || null,
+        productImage: item.imageUrl || null,
+        shopName: item.shopName || null,
+        referrer: node.referrer || null,
+        device: node.device || null,
+        buyerType: node.buyerType || null,
+        // channelType e attributionType sao do item, nao da conversao.
+        channelType: item.channelType || null,
+        attributionType: item.attributionType || null,
+        categoryName: item.categoryLv1Name || null,
+        purchasedAt,
+        confirmedAt: parseEpochSeconds(item.completeTime),
+        shopeeData: { conversion: node, order, item } as unknown as object,
+      },
+    }))
+  )
 }
 
 export async function syncShopeeAccount(
@@ -238,72 +315,36 @@ export async function syncShopeeAccount(
     throw error
   }
 
-  // Uma consulta para saber o que já existe, em vez de um findFirst por venda:
-  // o plano Hobby da Vercel corta a função em poucos segundos, e uma ida ao
-  // banco por registro estoura esse limite rápido conforme o volume cresce.
-  const externalIds = nodes.map((node) => String(node.conversionId))
+  const linhas = nodes.flatMap((node) => linhasDe(node, workspaceId, account.id))
 
+  // Uma consulta para saber o que já existe, em vez de uma por item: no plano
+  // Hobby a função é cortada em poucos segundos, e uma ida ao banco por
+  // registro estoura esse limite conforme o volume cresce.
   const existentes = new Map(
     (
       await prisma.sale.findMany({
-        where: { workspaceId, externalId: { in: externalIds } },
+        where: { workspaceId, externalId: { in: linhas.map((l) => l.externalId) } },
         select: { id: true, externalId: true },
       })
     ).map((venda) => [venda.externalId, venda.id])
   )
 
   const novas: Array<Record<string, unknown>> = []
-  let created = 0
   let updated = 0
 
-  for (const node of nodes) {
-    const externalId = String(node.conversionId)
-    const firstOrder = node.orders?.[0]
-
-    // A comissão do afiliado é a líquida; as outras ficam no bruto para
-    // auditoria, sem virar número no relatório.
-    const commission = parseMoney(node.netCommission ?? node.totalCommission)
-    const purchasedAt = parseEpochSeconds(node.purchaseTime) ?? new Date()
-    const status = mapStatus(node.conversionStatus)
-
-    const payload = {
-      workspaceId,
-      shopeeAccountId: account.id,
-      externalId,
-      orderNumber: firstOrder?.orderId ?? null,
-      // utmContent carrega o sub_id quando o link tiver um; hoje vem vazio.
-      subId: node.utmContent || null,
-      amount: parseMoney(node.totalCommission),
-      commission,
-      status,
-      // Sem sub_id ainda resta o referrer da Shopee, que e uma pista real de
-      // origem; tratar tudo como 'unattributed' jogaria fora essa informacao.
-      attributionSource: node.utmContent
-        ? 'shopee_subid'
-        : node.referrer
-          ? 'shopee_referrer'
-          : 'unattributed',
-      referrer: node.referrer || null,
-      device: node.device || null,
-      buyerType: node.buyerType || null,
-      purchasedAt,
-      confirmedAt: status === 'confirmed' ? parseEpochSeconds(node.purchaseTime) : null,
-      shopeeData: node as unknown as object,
-    }
-
-    const existingId = existentes.get(externalId)
+  for (const linha of linhas) {
+    const existingId = existentes.get(linha.externalId)
 
     if (existingId) {
-      await prisma.sale.update({ where: { id: existingId }, data: payload })
+      await prisma.sale.update({ where: { id: existingId }, data: linha.payload })
       updated++
     } else {
-      novas.push(payload)
+      novas.push({ ...linha.payload, externalId: linha.externalId })
     }
   }
 
   if (novas.length) {
     await prisma.sale.createMany({ data: novas as never })
-    created = novas.length
   }
 
   await prisma.shopeeAccount.update({
@@ -312,8 +353,8 @@ export async function syncShopeeAccount(
   })
 
   return {
-    fetched: nodes.length,
-    created,
+    fetched: linhas.length,
+    created: novas.length,
     updated,
     rangeStart: start,
     rangeEnd: end,
