@@ -276,7 +276,16 @@ export async function syncShopeeAccount(
       amount: parseMoney(node.totalCommission),
       commission,
       status,
-      attributionSource: node.utmContent ? 'shopee_subid' : 'unattributed',
+      // Sem sub_id ainda resta o referrer da Shopee, que e uma pista real de
+      // origem; tratar tudo como 'unattributed' jogaria fora essa informacao.
+      attributionSource: node.utmContent
+        ? 'shopee_subid'
+        : node.referrer
+          ? 'shopee_referrer'
+          : 'unattributed',
+      referrer: node.referrer || null,
+      device: node.device || null,
+      buyerType: node.buyerType || null,
       purchasedAt,
       confirmedAt: status === 'confirmed' ? parseEpochSeconds(node.purchaseTime) : null,
       shopeeData: node as unknown as object,

@@ -351,7 +351,14 @@ model Sale {
   status          String   // pending, confirmed, cancelled
 
   // Attribution info
-  attributionSource String? // shopee_subid, manual_link, unattributed
+  attributionSource String? // shopee_subid, shopee_referrer, manual_link, unattributed
+
+  // Origem detectada pela propria Shopee (instagram, video, etc). Vem
+  // preenchida mesmo sem sub_id, entao e a unica pista de origem para links
+  // sem etiqueta.
+  referrer          String?
+  device            String?  // APP, WEB
+  buyerType         String?  // NEW, EXISTING
 
   // Product info (imported from Shopee)
   productName     String?
