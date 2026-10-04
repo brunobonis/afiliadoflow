@@ -159,6 +159,8 @@ export interface SyncResult {
   truncated: boolean
   /** Qual seleção de campos a API aceitou: completa, reduzida, minima, sem itens. */
   selecao: string
+  /** Quantas janelas de tempo foram necessárias para cobrir o período. */
+  janelas: number
   /** Primeiro registro cru, para conferir o formato real que a Shopee devolve. */
   sample: ConversionNode | null
 }
@@ -234,32 +236,74 @@ async function fetchPage(
   )
 }
 
+/** Até 64 janelas; além disso o intervalo é curto demais para valer dividir. */
+const MAX_DEPTH = 6
+
 /**
- * Coleta de página única.
+ * Coleta dividindo o período, não por cursor.
  *
  * A paginação por cursor dependia de pageInfo.scrollId, e selecionar pageInfo
- * derrubava a consulta inteira porque a Shopee devolve null num campo que ela
- * própria declara não nulo. Sem cursor, resta pedir um limite alto e avisar
- * quando a resposta vier cheia, já que aí pode haver mais.
+ * derruba a consulta inteira porque a Shopee devolve null num campo que ela
+ * própria declara não nulo. Sobrou o filtro de data, que funciona: quando uma
+ * janela volta cheia — sinal de que foi cortada — ela é dividida ao meio e
+ * cada metade é coletada em separado, até caber no limite.
+ *
+ * As chamadas são sequenciais de propósito, para não disparar rajada contra a
+ * API por causa de um intervalo grande.
  */
+async function coletar(
+  credentials: ShopeeCredentials,
+  inicio: number,
+  fim: number,
+  profundidade: number,
+  estado: { selecao: string; truncated: boolean; janelas: number }
+): Promise<ConversionNode[]> {
+  const resultado = await fetchPage(credentials, inicio, fim)
+  const nodes = resultado.nodes || []
+
+  estado.selecao = resultado.selecao
+  estado.janelas++
+
+  if (nodes.length < PAGE_SIZE) return nodes
+
+  // Janela cheia: pode haver mais do que o limite devolveu.
+  if (profundidade >= MAX_DEPTH || fim - inicio < 2) {
+    estado.truncated = true
+    return nodes
+  }
+
+  const meio = Math.floor((inicio + fim) / 2)
+
+  return [
+    ...(await coletar(credentials, inicio, meio, profundidade + 1, estado)),
+    ...(await coletar(credentials, meio + 1, fim, profundidade + 1, estado)),
+  ]
+}
+
 export async function fetchConversions(
   credentials: ShopeeCredentials,
   start: Date,
   end: Date
-): Promise<{ nodes: ConversionNode[]; truncated: boolean; selecao: string }> {
-  const resultado = await fetchPage(
+): Promise<{
+  nodes: ConversionNode[]
+  truncated: boolean
+  selecao: string
+  janelas: number
+}> {
+  const estado = { selecao: 'completa', truncated: false, janelas: 0 }
+
+  const nodes = await coletar(
     credentials,
     Math.floor(start.getTime() / 1000),
-    Math.floor(end.getTime() / 1000)
+    Math.floor(end.getTime() / 1000),
+    0,
+    estado
   )
 
-  const nodes = resultado.nodes || []
+  // Dividir o período pode trazer a mesma conversão em duas janelas vizinhas.
+  const unicos = new Map(nodes.map((node) => [String(node.conversionId), node]))
 
-  return {
-    nodes,
-    truncated: nodes.length >= PAGE_SIZE,
-    selecao: resultado.selecao,
-  }
+  return { nodes: [...unicos.values()], ...estado }
 }
 
 export function credentialsOf(account: {
@@ -388,9 +432,14 @@ export async function syncShopeeAccount(
   let nodes: ConversionNode[]
   let truncated: boolean
   let selecao: string
+  let janelas: number
 
   try {
-    ;({ nodes, truncated, selecao } = await fetchConversions(credentialsOf(account), start, end))
+    ;({ nodes, truncated, selecao, janelas } = await fetchConversions(
+      credentialsOf(account),
+      start,
+      end
+    ))
   } catch (error) {
     await prisma.shopeeAccount.update({
       where: { id: account.id },
@@ -448,6 +497,7 @@ export async function syncShopeeAccount(
     rangeEnd: end,
     truncated,
     selecao,
+    janelas,
     sample: nodes[0] ?? null,
   }
 }

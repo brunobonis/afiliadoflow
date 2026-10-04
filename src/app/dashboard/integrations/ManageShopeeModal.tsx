@@ -18,6 +18,7 @@ interface SyncResult {
   updated: number
   truncated?: boolean
   selecao?: string
+  janelas?: number
   sample: unknown
 }
 
@@ -180,8 +181,11 @@ export default function ManageShopeeModal({
           {syncResult && (
             <div className="bg-green-500/10 border border-green-500/50 text-green-300 px-4 py-3 rounded text-sm space-y-2">
               <p>
-                {syncResult.fetched} conversões recebidas · {syncResult.created} novas ·{' '}
+                {syncResult.fetched} vendas recebidas · {syncResult.created} novas ·{' '}
                 {syncResult.updated} atualizadas
+                {syncResult.janelas && syncResult.janelas > 1
+                  ? ` · período dividido em ${syncResult.janelas} janelas`
+                  : ''}
               </p>
               {syncResult.selecao && syncResult.selecao !== 'completa' && (
                 <p className="text-amber-400 text-xs">
