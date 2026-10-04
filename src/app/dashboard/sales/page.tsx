@@ -37,13 +37,34 @@ const STATUS_INFO: Record<string, { rotulo: string; classe: string }> = {
   cancelled: { rotulo: 'Cancelada', classe: 'bg-red-500/10 text-red-400' },
 }
 
-/** Datas no formato que o input type="date" entende. */
+/**
+ * Datas no formato do input type="date", montadas a partir dos componentes
+ * locais. toISOString() daria a data em UTC, e à noite no Brasil isso já é o
+ * dia seguinte — "Hoje" selecionaria amanhã.
+ */
 function iso(data: Date) {
-  return data.toISOString().slice(0, 10)
+  const mes = String(data.getMonth() + 1).padStart(2, '0')
+  const dia = String(data.getDate()).padStart(2, '0')
+
+  return `${data.getFullYear()}-${mes}-${dia}`
 }
 
 function diasAtras(dias: number) {
   return iso(new Date(Date.now() - dias * 24 * 60 * 60 * 1000))
+}
+
+/**
+ * O servidor roda em UTC, então enviar só "2026-10-04" faria ele recortar o
+ * dia em UTC enquanto a tela mostra horário local — venda das 21h de ontem
+ * apareceria como sendo de hoje. Convertendo aqui, o recorte usa o fuso de
+ * quem está olhando.
+ */
+function instanteLocal(data: string, fimDoDia: boolean) {
+  const [ano, mes, dia] = data.split('-').map(Number)
+
+  return fimDoDia
+    ? new Date(ano, mes - 1, dia, 23, 59, 59, 999).toISOString()
+    : new Date(ano, mes - 1, dia, 0, 0, 0, 0).toISOString()
 }
 
 const PERIODOS = [
@@ -77,8 +98,8 @@ export default function SalesPage() {
       try {
         const params = new URLSearchParams()
         if (selectedAccountId) params.set('accountId', selectedAccountId)
-        if (from) params.set('from', from)
-        if (to) params.set('to', to)
+        if (from) params.set('from', instanteLocal(from, false))
+        if (to) params.set('to', instanteLocal(to, true))
         if (status !== 'all') params.set('status', status)
 
         const res = await fetch(`/api/sales?${params}`)
@@ -224,16 +245,24 @@ export default function SalesPage() {
           <table className="w-full">
             <thead className="bg-[#0F172A] border-b border-slate-800">
               <tr>
-                {['Data', 'Pedido', 'Produto', 'Origem', 'Valor', 'Comissão', 'Status'].map(
-                  (coluna) => (
-                    <th
-                      key={coluna}
-                      className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider"
-                    >
-                      {coluna}
-                    </th>
-                  )
-                )}
+                {/* Pedido só aparece em telas largas: era ela que empurrava o
+                    status para fora. O número continua no título do produto. */}
+                {[
+                  { rotulo: 'Data', classe: '' },
+                  { rotulo: 'Pedido', classe: 'hidden xl:table-cell' },
+                  { rotulo: 'Produto', classe: '' },
+                  { rotulo: 'Origem', classe: '' },
+                  { rotulo: 'Valor', classe: '' },
+                  { rotulo: 'Comissão', classe: '' },
+                  { rotulo: 'Status', classe: '' },
+                ].map((coluna) => (
+                  <th
+                    key={coluna.rotulo}
+                    className={`px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider ${coluna.classe}`}
+                  >
+                    {coluna.rotulo}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
@@ -253,7 +282,7 @@ export default function SalesPage() {
 
                 return (
                   <tr key={sale.id} className="hover:bg-[#0F172A] transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-4 whitespace-nowrap">
                       <p className="text-sm text-white">{formatDate(sale.purchasedAt)}</p>
                       {sale.confirmedAt && (
                         <p className="text-xs text-slate-400">
@@ -261,20 +290,26 @@ export default function SalesPage() {
                         </p>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-4 whitespace-nowrap hidden xl:table-cell">
                       <p className="text-sm text-white font-mono">{sale.orderNumber || '-'}</p>
                     </td>
-                    <td className="px-6 py-4 max-w-xs">
+                    <td className="px-4 py-4 max-w-[22rem]">
                       {/* productName vem da sincronização; product.name só existe
-                          para itens cadastrados manualmente. */}
-                      <p className="text-sm text-white truncate" title={sale.productName || ''}>
+                          para itens cadastrados manualmente. O número do pedido
+                          vai no title, já que a coluna some em telas estreitas. */}
+                      <p
+                        className="text-sm text-white truncate"
+                        title={`${sale.productName || ''}${
+                          sale.orderNumber ? ` — pedido ${sale.orderNumber}` : ''
+                        }`}
+                      >
                         {sale.productName || sale.product?.name || '-'}
                       </p>
                       {sale.shopName && (
                         <p className="text-xs text-slate-500 truncate">{sale.shopName}</p>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-4 whitespace-nowrap">
                       <p className="text-sm text-slate-300">
                         {sale.channelType || sale.referrer || '-'}
                       </p>
@@ -282,17 +317,17 @@ export default function SalesPage() {
                         <p className="text-xs text-slate-500 font-mono">/{sale.link.shortCode}</p>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-4 whitespace-nowrap">
                       <p className="text-sm text-white font-medium">
                         {formatCurrency(sale.amount)}
                       </p>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-4 whitespace-nowrap">
                       <p className="text-sm text-green-400 font-medium">
                         {formatCurrency(sale.commission)}
                       </p>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-4 whitespace-nowrap">
                       <span className={`px-2 py-1 text-xs rounded ${info.classe}`}>
                         {info.rotulo}
                       </span>

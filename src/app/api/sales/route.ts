@@ -22,12 +22,17 @@ export async function GET(request: NextRequest) {
      * faria o total divergir do que a lista mostra assim que o volume passasse
      * do que cabe numa resposta.
      */
+    // A tela envia instantes ISO completos, já convertidos para o fuso de quem
+    // está olhando. Montar o limite aqui a partir de uma data solta recortaria
+    // o dia em UTC, e a venda das 21h apareceria no dia seguinte.
     if (from || to) {
       where.purchasedAt = {}
 
-      if (from) where.purchasedAt.gte = new Date(`${from}T00:00:00`)
-      // O fim do dia entra inteiro, senão as vendas de hoje ficam de fora.
-      if (to) where.purchasedAt.lte = new Date(`${to}T23:59:59.999`)
+      const inicio = from ? new Date(from) : null
+      const fim = to ? new Date(to) : null
+
+      if (inicio && !Number.isNaN(inicio.getTime())) where.purchasedAt.gte = inicio
+      if (fim && !Number.isNaN(fim.getTime())) where.purchasedAt.lte = fim
     }
 
     const sales = await prisma.sale.findMany({
