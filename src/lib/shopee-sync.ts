@@ -25,8 +25,6 @@ const CONVERSION_REPORT_QUERY = `
       scrollId: $scrollId
     ) {
       pageInfo {
-        limit
-        hasNextPage
         scrollId
       }
       nodes {
@@ -113,7 +111,7 @@ const MAX_PAGES = 50
 
 interface ConversionPage {
   conversionReport: {
-    pageInfo: { limit: number; hasNextPage: boolean; scrollId: string | null }
+    pageInfo: { scrollId: string | null } | null
     nodes: ConversionNode[]
   }
 }
@@ -177,14 +175,21 @@ export async function fetchConversions(
 
   for (let pagina = 0; pagina < MAX_PAGES; pagina++) {
     const resultado = await fetchPage(credentials, inicio, fim, scrollId)
+    const recebidos = resultado.nodes || []
 
-    nodes.push(...(resultado.nodes || []))
+    nodes.push(...recebidos)
 
-    if (!resultado.pageInfo?.hasNextPage) {
-      return { nodes, truncated: false }
-    }
+    /**
+     * Deduz o fim pela quantidade em vez de ler pageInfo.hasNextPage: a Shopee
+     * devolve null nesse campo mesmo declarando-o Boolean!, e a consulta
+     * inteira falha com "got null for non-null". Página incompleta significa
+     * que acabou; página cheia sem scrollId também, porque não há como pedir
+     * a próxima.
+     */
+    scrollId = resultado.pageInfo?.scrollId ?? null
 
-    scrollId = resultado.pageInfo.scrollId
+    if (recebidos.length < PAGE_SIZE) return { nodes, truncated: false }
+    if (!scrollId) return { nodes, truncated: true }
   }
 
   // Bateu no teto: melhor avisar do que devolver um total errado em silêncio.
