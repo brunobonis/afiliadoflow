@@ -16,6 +16,7 @@ interface SyncResult {
   fetched: number
   created: number
   updated: number
+  truncated?: boolean
   sample: unknown
 }
 
@@ -181,6 +182,12 @@ export default function ManageShopeeModal({
                 {syncResult.fetched} conversões recebidas · {syncResult.created} novas ·{' '}
                 {syncResult.updated} atualizadas
               </p>
+              {syncResult.truncated && (
+                <p className="text-amber-400 text-xs">
+                  ⚠️ A coleta bateu no limite de páginas — pode haver vendas além destas.
+                  Sincronize um período menor para garantir o total.
+                </p>
+              )}
               {syncResult.sample ? (
                 <details>
                   <summary className="cursor-pointer text-xs text-green-400/80">
