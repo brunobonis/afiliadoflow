@@ -317,10 +317,31 @@ export function credentialsOf(account: {
   return { appId: account.appId, appSecret: decryptSecret(account.appSecret) }
 }
 
-function mapStatus(status: string): string {
-  const normalized = (status || '').toLowerCase()
+/**
+ * orderStatus vem do enum DisplayOrderStatus e distingue UNPAID de PENDING,
+ * que são situações bem diferentes: um pedido aguardando pagamento ainda pode
+ * não se concretizar, enquanto o pendente já foi pago e só espera a liberação
+ * da comissão. Tratar os dois como "pendente" inflava a expectativa de receita.
+ *
+ * conversionStatus é String livre e serve de reserva quando o pedido não traz
+ * status.
+ */
+function mapStatus(orderStatus: string | undefined, conversionStatus: string): string {
+  switch ((orderStatus || '').toUpperCase()) {
+    case 'UNPAID':
+      return 'unpaid'
+    case 'PENDING':
+      return 'pending'
+    case 'COMPLETED':
+      return 'confirmed'
+    case 'CANCELLED':
+      return 'cancelled'
+  }
+
+  const normalized = (conversionStatus || '').toLowerCase()
 
   if (normalized.includes('cancel') || normalized.includes('invalid')) return 'cancelled'
+  if (normalized.includes('unpaid') || normalized.includes('aguardando pag')) return 'unpaid'
   if (normalized.includes('complet') || normalized.includes('confirm')) return 'confirmed'
 
   return 'pending'
@@ -349,7 +370,6 @@ function linhasDe(
   const subId = node.utmContent || null
 
   const origem = subId ? 'shopee_subid' : node.referrer ? 'shopee_referrer' : 'unattributed'
-  const status = mapStatus(node.conversionStatus)
 
   const base = {
     workspaceId,
@@ -359,9 +379,20 @@ function linhasDe(
     referrer: node.referrer || null,
     device: node.device || null,
     buyerType: node.buyerType || null,
-    status,
     purchasedAt,
-    confirmedAt: status === 'confirmed' ? purchasedAt : null,
+  }
+
+  /** O status é por pedido, não pela conversão: cada um tem o seu. */
+  const statusDe = (order: ConversionOrder) => {
+    const status = mapStatus(order.orderStatus, node.conversionStatus)
+
+    return {
+      status,
+      // item.completeTime seria a data exata da confirmação, mas vem null
+      // enquanto a comissão não confirma e, sendo declarado Int64!, derruba a
+      // consulta inteira. Aproximamos pela data da compra.
+      confirmedAt: status === 'confirmed' ? purchasedAt : null,
+    }
   }
 
   const linhas = (node.orders || []).flatMap((order) =>
@@ -371,6 +402,7 @@ function linhasDe(
       externalId: `${conversionId}:${order.orderId}:${item.itemId}:${item.modelId}`,
       payload: {
         ...base,
+        ...statusDe(order),
         orderNumber: order.orderId ?? null,
         amount: parseMoney(item.actualAmount),
         commission: parseMoney(item.itemTotalCommission),
@@ -399,6 +431,7 @@ function linhasDe(
       externalId: conversionId,
       payload: {
         ...base,
+        ...statusDe(node.orders?.[0] ?? ({} as ConversionOrder)),
         orderNumber: node.orders?.[0]?.orderId ?? null,
         amount: parseMoney(node.totalCommission),
         commission: parseMoney(node.netCommission ?? node.totalCommission),
