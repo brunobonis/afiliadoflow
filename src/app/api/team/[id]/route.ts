@@ -12,7 +12,7 @@ export async function PATCH(
     const body = await request.json()
 
     // Check if requester is admin
-    const requester = await prisma.workspaceMember.findFirst({
+    const requester = await prisma.workspaceUser.findFirst({
       where: {
         workspaceId: session.workspaceId,
         userId: session.userId,
@@ -26,7 +26,7 @@ export async function PATCH(
       )
     }
 
-    const member = await prisma.workspaceMember.update({
+    const member = await prisma.workspaceUser.update({
       where: { id },
       data: { role: body.role },
       include: {
@@ -58,7 +58,7 @@ export async function DELETE(
     const { id } = await params
 
     // Check if requester is admin
-    const requester = await prisma.workspaceMember.findFirst({
+    const requester = await prisma.workspaceUser.findFirst({
       where: {
         workspaceId: session.workspaceId,
         userId: session.userId,
@@ -72,7 +72,7 @@ export async function DELETE(
       )
     }
 
-    await prisma.workspaceMember.delete({
+    await prisma.workspaceUser.delete({
       where: { id },
     })
 

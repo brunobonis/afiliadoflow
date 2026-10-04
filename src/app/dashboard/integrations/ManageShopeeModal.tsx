@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import ManageShopeeModal from './ManageShopeeModal'
 
 interface ShopeeAccount {
   id: string

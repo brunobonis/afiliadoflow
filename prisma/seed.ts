@@ -115,7 +115,7 @@ async function main() {
         productId: product.id,
         shortCode: `${product.externalId?.toLowerCase()}`,
         destination: `https://shopee.com.br/product/${product.externalId}`,
-        title: `Link: ${product.name}`,
+        nickname: `Link: ${product.name}`,
         utmSource: 'instagram',
         utmMedium: 'social',
         utmCampaign: 'lancamento',

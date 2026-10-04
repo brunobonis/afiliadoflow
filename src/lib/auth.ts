@@ -1,11 +1,11 @@
-import { SignJWT, jwtVerify } from 'jose'
+import { SignJWT, jwtVerify, type JWTPayload } from 'jose'
 import { cookies } from 'next/headers'
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'dev-secret-change-in-production-123456789'
 )
 
-export interface TokenPayload {
+export interface TokenPayload extends JWTPayload {
   userId: string
   email: string
   workspaceId: string

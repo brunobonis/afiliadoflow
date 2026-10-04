@@ -94,7 +94,7 @@ export default function ManageMetaModal({
                 >
                   <div>
                     <h3 className="text-white font-medium">{account.accountName}</h3>
-                    <p className="text-sm text-slate-400">ID: {account.adAccountId}</p>
+                    <p className="text-sm text-slate-400">ID: {account.accountId}</p>
                     <span
                       className={`inline-block mt-2 px-2 py-1 text-xs rounded ${
                         account.status === 'connected'

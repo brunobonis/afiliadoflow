@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
   try {
     const session = await requireAuth()
 
-    const members = await prisma.workspaceMember.findMany({
+    const members = await prisma.workspaceUser.findMany({
       where: { workspaceId: session.workspaceId },
       include: {
         user: {
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
 
     // Check if requester is admin
-    const requester = await prisma.workspaceMember.findFirst({
+    const requester = await prisma.workspaceUser.findFirst({
       where: {
         workspaceId: session.workspaceId,
         userId: session.userId,
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if already member
-    const existing = await prisma.workspaceMember.findFirst({
+    const existing = await prisma.workspaceUser.findFirst({
       where: {
         workspaceId: session.workspaceId,
         userId: user.id,
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Add member
-    const member = await prisma.workspaceMember.create({
+    const member = await prisma.workspaceUser.create({
       data: {
         workspaceId: session.workspaceId,
         userId: user.id,

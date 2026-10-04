@@ -18,8 +18,9 @@ export async function PATCH(
       },
       data: {
         accountName: body.accountName,
-        adAccountId: body.adAccountId,
+        accountId: body.adAccountId,
         accessToken: body.accessToken,
+        adAccountIds: [body.adAccountId],
         status: body.status,
       },
     })

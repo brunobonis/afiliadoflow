@@ -22,12 +22,17 @@ export async function POST(request: NextRequest) {
     const session = await requireAuth()
     const body = await request.json()
 
+    const adAccountId: string = body.adAccountId
+
     const account = await prisma.metaAccount.create({
       data: {
         workspaceId: session.workspaceId,
+        accountId: adAccountId,
         accountName: body.accountName,
-        adAccountId: body.adAccountId,
         accessToken: body.accessToken, // In production, encrypt this
+        // Manual tokens from the Graph API Explorer last ~60 days
+        tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+        adAccountIds: [adAccountId],
         status: 'pending',
       },
     })

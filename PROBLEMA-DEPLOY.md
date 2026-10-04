@@ -1,4 +1,68 @@
-# 🚨 PROBLEMA DE DEPLOY - AfiliadoFlow
+# ✅ RESOLVIDO - PROBLEMA DE DEPLOY - AfiliadoFlow
+
+> **Status:** corrigido em 03/10/2026. O histórico abaixo fica como registro do
+> diagnóstico. Resumo da causa e da correção nesta seção.
+
+## Causa raiz (o que realmente acontecia)
+
+O `react` estava **pinado numa versão RC**: `19.0.0-rc-66855b96-20241106`.
+
+No semver do npm, uma versão de pré-lançamento **não satisfaz** um range como
+`^19`. Então o `@tanstack/react-query`, que declara
+`peerDependencies: { react: "^18 || ^19" }`, nunca podia ser satisfeito pelo RC
+instalado — daí o `ERESOLVE`. O mesmo valia para os 41+ pacotes citados nos logs
+(Radix UI, recharts etc.), todos com ranges `^18 || ^19`.
+
+**Armadilha importante:** só trocar o React para 19 estável **não** resolvia,
+porque o `next@15.0.3` declarava
+`peer react: "^18.2.0 || 19.0.0-rc-66855b96-20241106"` — aquele RC exato e nada
+mais. React 19 estável teria quebrado o peer do próprio Next. Por isso o Next
+também precisou subir.
+
+## O que foi corrigido
+
+| Item | Antes | Depois |
+| --- | --- | --- |
+| `react` / `react-dom` | `19.0.0-rc-66855b96-20241106` | `^19.0.0` (resolve 19.3.0) |
+| `next` | `15.0.3` | `15.5.27` (peer aceita `^19.0.0`) |
+| `eslint-config-next` | `15.0.3` | `15.5.27` |
+| `build` | `next build` | `prisma generate && next build` |
+| `package-lock.json` | com RC | regerado, sem RC resolvido |
+
+Resolvido **sem** `--legacy-peer-deps` e **sem** `overrides`: a árvore de
+dependências é válida de verdade, não forçada.
+
+### Erros de tipo que também travavam o build
+
+Depois do `npm install` passar, o `next build` ainda falhava. Eram 17 erros de
+TypeScript pré-existentes, não relacionados ao React:
+
+- `prisma/seed.ts` — campo `title` não existe em `TrackingLink`; o certo é `nickname`.
+- `src/app/api/team/route.ts` e `team/[id]/route.ts` — `prisma.workspaceMember`
+  não existe; o model é `WorkspaceUser` (8 ocorrências).
+- `src/app/api/integrations/meta/route.ts` e `meta/[id]/route.ts` — campo
+  `adAccountId` não existe; o schema tem `adAccountIds` (Json). O `create`
+  também não enviava `accountId` nem `tokenExpiresAt`, ambos obrigatórios.
+- `src/app/dashboard/integrations/ManageShopeeModal.tsx` — o arquivo
+  **importava a si mesmo**.
+- `src/app/dashboard/layout.tsx` — `JSX.Element` global foi removido no
+  `@types/react` 19; passou a `React.JSX.Element`.
+- `src/lib/auth.ts` — `TokenPayload` agora estende `JWTPayload` do `jose`.
+- `src/components/ManageMetaModal.tsx` — cópia morta e quebrada (sem
+  `'use client'`, sem import de `useState`, sem export) de
+  `src/app/dashboard/integrations/ManageMetaModal.tsx`. Removida.
+
+### Validação local
+
+`npx tsc --noEmit` sem erros e `next build` gerando as 26 rotas.
+
+### Observação sobre `vercel.json`
+
+O `vercel.json` estava com schema inválido (chave `services` e `rewrites` com
+`destination` em objeto — formato de outra plataforma, não da Vercel). Se tivesse
+sido commitado assim, quebraria o roteamento. Foi reduzido ao mínimo válido.
+
+---
 
 ## Contexto do Projeto
 
