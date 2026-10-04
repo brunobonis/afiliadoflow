@@ -17,6 +17,7 @@ interface SyncResult {
   created: number
   updated: number
   truncated?: boolean
+  selecao?: string
   sample: unknown
 }
 
@@ -182,6 +183,15 @@ export default function ManageShopeeModal({
                 {syncResult.fetched} conversões recebidas · {syncResult.created} novas ·{' '}
                 {syncResult.updated} atualizadas
               </p>
+              {syncResult.selecao && syncResult.selecao !== 'completa' && (
+                <p className="text-amber-400 text-xs">
+                  A Shopee recusou parte dos campos — usei a seleção{' '}
+                  <strong>{syncResult.selecao}</strong>.
+                  {syncResult.selecao === 'sem itens'
+                    ? ' As vendas vieram sem nome de produto.'
+                    : ' Algumas colunas podem vir vazias.'}
+                </p>
+              )}
               {syncResult.truncated && (
                 <p className="text-amber-400 text-xs">
                   ⚠️ A coleta bateu no limite de páginas — pode haver vendas além destas.

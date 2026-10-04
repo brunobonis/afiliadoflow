@@ -47,7 +47,30 @@ const ITEM_FIELDS_MINIMAL = `
   itemTotalCommission
 `
 
-const buildQuery = (itemFields: string) => `
+/** Só o indispensável para identificar o produto. */
+const ITEM_FIELDS_BARE = `
+  itemId
+  modelId
+  itemName
+  qty
+`
+
+/**
+ * Da seleção mais completa à ausência total de itens.
+ *
+ * A última entrada é vazia de propósito: sem o bloco items a consulta volta a
+ * ser a que já funcionou em produção. Perder o nome do produto é ruim, mas
+ * pior é não sincronizar venda nenhuma — e sem este degrau nem cadastrar a
+ * conta era possível, já que o cadastro valida chamando a API.
+ */
+const ITEM_SELECTIONS: Array<{ nome: string; campos: string | null }> = [
+  { nome: 'completa', campos: ITEM_FIELDS_RICH },
+  { nome: 'reduzida', campos: ITEM_FIELDS_MINIMAL },
+  { nome: 'minima', campos: ITEM_FIELDS_BARE },
+  { nome: 'sem itens', campos: null },
+]
+
+const buildQuery = (itemFields: string | null) => `
   query ConversionReport($start: Int64, $end: Int64, $limit: Int, $scrollId: String) {
     conversionReport(
       purchaseTimeStart: $start
@@ -75,9 +98,7 @@ const buildQuery = (itemFields: string) => `
           orderId
           orderStatus
           shopType
-          items {
-            ${itemFields}
-          }
+          ${itemFields ? `items { ${itemFields} }` : ''}
         }
       }
     }
@@ -130,6 +151,8 @@ export interface SyncResult {
   rangeEnd: Date
   /** true quando a coleta bateu no teto de páginas e pode faltar venda. */
   truncated: boolean
+  /** Qual seleção de campos a API aceitou: completa, reduzida, minima, sem itens. */
+  selecao: string
   /** Primeiro registro cru, para conferir o formato real que a Shopee devolve. */
   sample: ConversionNode | null
 }
@@ -165,41 +188,44 @@ async function fetchPage(
   start: number,
   end: number,
   scrollId: string | null
-): Promise<ConversionPage['conversionReport']> {
+): Promise<ConversionPage['conversionReport'] & { selecao: string }> {
   /**
    * purchaseTimeStart/End são o escalar Int64 e a forma aceita não está
    * documentada. Em produção a string funcionou, mas o fallback fica porque a
    * alternativa é falhar inteiro por uma suposição.
    */
-  const tentativas: Array<{ query: string; variables: Record<string, unknown> }> = []
+  // O primeiro erro é o informativo: ele vem da seleção mais completa com a
+  // codificação que funciona. Os seguintes são ruído das tentativas de
+  // fallback, e reportar o último mostrava "wrong type" da tentativa
+  // numérica, escondendo a causa real.
+  let primeiroErro: unknown
 
-  for (const itemFields of [ITEM_FIELDS_RICH, ITEM_FIELDS_MINIMAL]) {
-    tentativas.push(
-      { query: buildQuery(itemFields), variables: { start: String(start), end: String(end), limit: PAGE_SIZE, scrollId } },
-      { query: buildQuery(itemFields), variables: { start, end, limit: PAGE_SIZE, scrollId } }
-    )
-  }
+  for (const selecao of ITEM_SELECTIONS) {
+    const query = buildQuery(selecao.campos)
 
-  let ultimoErro: unknown
+    /**
+     * purchaseTimeStart/End são o escalar Int64 e a forma aceita não está
+     * documentada; em produção a string funcionou. O fallback numérico fica
+     * porque a alternativa é falhar inteiro por uma suposição.
+     */
+    for (const variables of [
+      { start: String(start), end: String(end), limit: PAGE_SIZE, scrollId },
+      { start, end, limit: PAGE_SIZE, scrollId },
+    ]) {
+      try {
+        const data = await shopeeGraphQL<ConversionPage>(credentials, query, variables)
 
-  for (const tentativa of tentativas) {
-    try {
-      const data = await shopeeGraphQL<ConversionPage>(
-        credentials,
-        tentativa.query,
-        tentativa.variables
-      )
+        return { ...data.conversionReport, selecao: selecao.nome }
+      } catch (error) {
+        primeiroErro ??= error
 
-      return data.conversionReport
-    } catch (error) {
-      ultimoErro = error
-
-      // Credencial, permissão ou limite não melhoram com outro formato.
-      if (!isQueryShapeError(error)) throw error
+        // Credencial, permissão ou limite não melhoram com outro formato.
+        if (!isQueryShapeError(error)) throw error
+      }
     }
   }
 
-  throw ultimoErro
+  throw primeiroErro
 }
 
 /**
@@ -213,12 +239,13 @@ export async function fetchConversions(
   credentials: ShopeeCredentials,
   start: Date,
   end: Date
-): Promise<{ nodes: ConversionNode[]; truncated: boolean }> {
+): Promise<{ nodes: ConversionNode[]; truncated: boolean; selecao: string }> {
   const inicio = Math.floor(start.getTime() / 1000)
   const fim = Math.floor(end.getTime() / 1000)
 
   const nodes: ConversionNode[] = []
   let scrollId: string | null = null
+  let selecao = 'completa'
 
   for (let pagina = 0; pagina < MAX_PAGES; pagina++) {
     const resultado = await fetchPage(credentials, inicio, fim, scrollId)
@@ -226,12 +253,13 @@ export async function fetchConversions(
 
     nodes.push(...recebidos)
     scrollId = resultado.pageInfo?.scrollId ?? null
+    selecao = resultado.selecao
 
-    if (recebidos.length < PAGE_SIZE) return { nodes, truncated: false }
-    if (!scrollId) return { nodes, truncated: true }
+    if (recebidos.length < PAGE_SIZE) return { nodes, truncated: false, selecao }
+    if (!scrollId) return { nodes, truncated: true, selecao }
   }
 
-  return { nodes, truncated: true }
+  return { nodes, truncated: true, selecao }
 }
 
 export function credentialsOf(account: {
@@ -262,7 +290,16 @@ function mapStatus(status: string): string {
  * conversão deixava "qual produto vendeu" sem resposta, que é justamente a
  * pergunta do relatório.
  */
-function linhasDe(node: ConversionNode, workspaceId: string, shopeeAccountId: string) {
+interface LinhaVenda {
+  externalId: string
+  payload: Record<string, unknown>
+}
+
+function linhasDe(
+  node: ConversionNode,
+  workspaceId: string,
+  shopeeAccountId: string
+): LinhaVenda[] {
   const conversionId = String(node.conversionId)
   const purchasedAt = parseEpochSeconds(node.purchaseTime) ?? new Date()
   const subId = node.utmContent || null
@@ -270,40 +307,68 @@ function linhasDe(node: ConversionNode, workspaceId: string, shopeeAccountId: st
   const origem = subId ? 'shopee_subid' : node.referrer ? 'shopee_referrer' : 'unattributed'
   const status = mapStatus(node.conversionStatus)
 
-  return (node.orders || []).flatMap((order) =>
+  const base = {
+    workspaceId,
+    shopeeAccountId,
+    subId,
+    attributionSource: origem,
+    referrer: node.referrer || null,
+    device: node.device || null,
+    buyerType: node.buyerType || null,
+    status,
+    purchasedAt,
+    confirmedAt: status === 'confirmed' ? purchasedAt : null,
+  }
+
+  const linhas = (node.orders || []).flatMap((order) =>
     (order.items || []).map((item) => ({
       // Chave estável por item: a mesma conversão reaparece quando a comissão
       // confirma, e sem o item na chave cada sincronização duplicaria tudo.
       externalId: `${conversionId}:${order.orderId}:${item.itemId}:${item.modelId}`,
       payload: {
-        workspaceId,
-        shopeeAccountId,
-        orderNumber: order.orderId,
-        subId,
+        ...base,
+        orderNumber: order.orderId ?? null,
         amount: parseMoney(item.actualAmount),
         commission: parseMoney(item.itemTotalCommission),
         quantity: Number(item.qty) || 1,
-        status,
-        attributionSource: origem,
         productName: item.itemName || null,
         productImage: item.imageUrl || null,
         shopName: item.shopName || null,
-        referrer: node.referrer || null,
-        device: node.device || null,
-        buyerType: node.buyerType || null,
         // channelType e attributionType sao do item, nao da conversao.
         channelType: item.channelType || null,
         attributionType: item.attributionType || null,
         categoryName: item.categoryLv1Name || null,
-        purchasedAt,
-        // item.completeTime seria a data exata da confirmação, mas vem null
-        // enquanto a comissão não confirma — e, sendo declarado Int64!, isso
-        // derruba a consulta inteira. Aproximamos pela data da compra.
-        confirmedAt: status === 'confirmed' ? purchasedAt : null,
         shopeeData: { conversion: node, order, item } as unknown as object,
       },
     }))
   )
+
+  if (linhas.length) return linhas
+
+  /**
+   * Sem itens — ou porque a API recusou o bloco, ou porque a conversão veio
+   * sem produtos. Grava uma linha por conversão para a venda e a comissão não
+   * sumirem do relatório; perde-se o nome do produto, não o dinheiro.
+   */
+  return [
+    {
+      externalId: conversionId,
+      payload: {
+        ...base,
+        orderNumber: node.orders?.[0]?.orderId ?? null,
+        amount: parseMoney(node.totalCommission),
+        commission: parseMoney(node.netCommission ?? node.totalCommission),
+        quantity: 1,
+        productName: null,
+        productImage: null,
+        shopName: null,
+        channelType: null,
+        attributionType: null,
+        categoryName: null,
+        shopeeData: node as unknown as object,
+      },
+    },
+  ]
 }
 
 export async function syncShopeeAccount(
@@ -322,9 +387,10 @@ export async function syncShopeeAccount(
 
   let nodes: ConversionNode[]
   let truncated: boolean
+  let selecao: string
 
   try {
-    ;({ nodes, truncated } = await fetchConversions(credentialsOf(account), start, end))
+    ;({ nodes, truncated, selecao } = await fetchConversions(credentialsOf(account), start, end))
   } catch (error) {
     await prisma.shopeeAccount.update({
       where: { id: account.id },
@@ -358,7 +424,7 @@ export async function syncShopeeAccount(
     const existingId = existentes.get(linha.externalId)
 
     if (existingId) {
-      await prisma.sale.update({ where: { id: existingId }, data: linha.payload })
+      await prisma.sale.update({ where: { id: existingId }, data: linha.payload as never })
       updated++
     } else {
       novas.push({ ...linha.payload, externalId: linha.externalId })
@@ -381,6 +447,7 @@ export async function syncShopeeAccount(
     rangeStart: start,
     rangeEnd: end,
     truncated,
+    selecao,
     sample: nodes[0] ?? null,
   }
 }
