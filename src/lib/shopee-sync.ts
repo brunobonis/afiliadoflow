@@ -194,11 +194,9 @@ async function fetchPage(
    * documentada. Em produção a string funcionou, mas o fallback fica porque a
    * alternativa é falhar inteiro por uma suposição.
    */
-  // O primeiro erro é o informativo: ele vem da seleção mais completa com a
-  // codificação que funciona. Os seguintes são ruído das tentativas de
-  // fallback, e reportar o último mostrava "wrong type" da tentativa
-  // numérica, escondendo a causa real.
-  let primeiroErro: unknown
+  // Cada tentativa que falha entra aqui com o que foi tentado. Reportar só uma
+  // mensagem escondia qual combinação a gerou, e o diagnostico virava chute.
+  const falhas: Array<{ selecao: string; codificacao: string; erro: string }> = []
 
   for (const selecao of ITEM_SELECTIONS) {
     const query = buildQuery(selecao.campos)
@@ -208,24 +206,39 @@ async function fetchPage(
      * documentada; em produção a string funcionou. O fallback numérico fica
      * porque a alternativa é falhar inteiro por uma suposição.
      */
-    for (const variables of [
-      { start: String(start), end: String(end), limit: PAGE_SIZE, scrollId },
-      { start, end, limit: PAGE_SIZE, scrollId },
-    ]) {
+    for (const [codificacao, tempo] of [
+      ['texto', { start: String(start), end: String(end) }],
+      ['numero', { start, end }],
+    ] as const) {
+      /**
+       * scrollId só entra quando existe. Passar null explícito num argumento
+       * opcional é válido pelo spec, mas servidores não-conformes costumam
+       * tratar como tipo errado — e na primeira página ele é sempre null.
+       */
+      const variables: Record<string, unknown> = { ...tempo, limit: PAGE_SIZE }
+      if (scrollId) variables.scrollId = scrollId
+
       try {
         const data = await shopeeGraphQL<ConversionPage>(credentials, query, variables)
 
         return { ...data.conversionReport, selecao: selecao.nome }
       } catch (error) {
-        primeiroErro ??= error
-
         // Credencial, permissão ou limite não melhoram com outro formato.
         if (!isQueryShapeError(error)) throw error
+
+        falhas.push({
+          selecao: selecao.nome,
+          codificacao,
+          erro: error instanceof Error ? error.message : String(error),
+        })
       }
     }
   }
 
-  throw primeiroErro
+  throw new ShopeeApiError(
+    `A Shopee recusou todas as ${falhas.length} variações da consulta`,
+    { detail: falhas }
+  )
 }
 
 /**
