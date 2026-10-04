@@ -63,24 +63,30 @@ const ITEM_FIELDS_BARE = `
  * pior é não sincronizar venda nenhuma — e sem este degrau nem cadastrar a
  * conta era possível, já que o cadastro valida chamando a API.
  */
-const ITEM_SELECTIONS: Array<{ nome: string; campos: string | null }> = [
-  { nome: 'completa', campos: ITEM_FIELDS_RICH },
-  { nome: 'reduzida', campos: ITEM_FIELDS_MINIMAL },
-  { nome: 'minima', campos: ITEM_FIELDS_BARE },
-  { nome: 'sem itens', campos: null },
+const ITEM_SELECTIONS: Array<{ nome: string; campos: string | null; comLimit: boolean }> = [
+  { nome: 'completa', campos: ITEM_FIELDS_RICH, comLimit: true },
+  { nome: 'completa sem limite', campos: ITEM_FIELDS_RICH, comLimit: false },
+  { nome: 'reduzida', campos: ITEM_FIELDS_MINIMAL, comLimit: true },
+  { nome: 'minima', campos: ITEM_FIELDS_BARE, comLimit: true },
+  { nome: 'sem itens', campos: null, comLimit: false },
 ]
 
-const buildQuery = (itemFields: string | null) => `
-  query ConversionReport($start: Int64, $end: Int64, $limit: Int, $scrollId: String) {
+/**
+ * pageInfo fica de fora.
+ *
+ * A introspecção declara pageInfo: PageInfo!, mas a Shopee devolve null nele,
+ * e um não nulo nulo derruba a resposta inteira — foi o que quebrou até a
+ * seleção "sem itens", que reproduz a consulta já comprovada em produção.
+ * Sem pageInfo não há cursor, então a coleta é de página única e sinaliza
+ * truncamento quando vem cheia.
+ */
+const buildQuery = (itemFields: string | null, comLimit: boolean) => `
+  query ConversionReport($start: Int64, $end: Int64${comLimit ? ', $limit: Int' : ''}) {
     conversionReport(
       purchaseTimeStart: $start
       purchaseTimeEnd: $end
-      limit: $limit
-      scrollId: $scrollId
+      ${comLimit ? 'limit: $limit' : ''}
     ) {
-      pageInfo {
-        scrollId
-      }
       nodes {
         conversionId
         checkoutId
@@ -159,12 +165,9 @@ export interface SyncResult {
 
 const PAGE_SIZE = 100
 
-/** Trava contra laço infinito caso o cursor nunca termine. */
-const MAX_PAGES = 50
 
 interface ConversionPage {
   conversionReport: {
-    pageInfo: { scrollId: string | null } | null
     nodes: ConversionNode[]
   }
 }
@@ -186,8 +189,7 @@ export function isQueryShapeError(error: unknown): boolean {
 async function fetchPage(
   credentials: ShopeeCredentials,
   start: number,
-  end: number,
-  scrollId: string | null
+  end: number
 ): Promise<ConversionPage['conversionReport'] & { selecao: string }> {
   /**
    * purchaseTimeStart/End são o escalar Int64 e a forma aceita não está
@@ -196,42 +198,33 @@ async function fetchPage(
    */
   // Cada tentativa que falha entra aqui com o que foi tentado. Reportar só uma
   // mensagem escondia qual combinação a gerou, e o diagnostico virava chute.
-  const falhas: Array<{ selecao: string; codificacao: string; erro: string }> = []
+  const falhas: Array<{ selecao: string; erro: string }> = []
 
   for (const selecao of ITEM_SELECTIONS) {
-    const query = buildQuery(selecao.campos)
-
     /**
-     * purchaseTimeStart/End são o escalar Int64 e a forma aceita não está
-     * documentada; em produção a string funcionou. O fallback numérico fica
-     * porque a alternativa é falhar inteiro por uma suposição.
+     * Int64 vai como texto. As oito tentativas instrumentadas mostraram
+     * "wrong type" em todas as variações numéricas e nenhuma na textual, nas
+     * quatro seleções — evidência suficiente para parar de tentar número.
      */
-    for (const [codificacao, tempo] of [
-      ['texto', { start: String(start), end: String(end) }],
-      ['numero', { start, end }],
-    ] as const) {
-      /**
-       * scrollId só entra quando existe. Passar null explícito num argumento
-       * opcional é válido pelo spec, mas servidores não-conformes costumam
-       * tratar como tipo errado — e na primeira página ele é sempre null.
-       */
-      const variables: Record<string, unknown> = { ...tempo, limit: PAGE_SIZE }
-      if (scrollId) variables.scrollId = scrollId
+    const variables: Record<string, unknown> = { start: String(start), end: String(end) }
+    if (selecao.comLimit) variables.limit = PAGE_SIZE
 
-      try {
-        const data = await shopeeGraphQL<ConversionPage>(credentials, query, variables)
+    try {
+      const data = await shopeeGraphQL<ConversionPage>(
+        credentials,
+        buildQuery(selecao.campos, selecao.comLimit),
+        variables
+      )
 
-        return { ...data.conversionReport, selecao: selecao.nome }
-      } catch (error) {
-        // Credencial, permissão ou limite não melhoram com outro formato.
-        if (!isQueryShapeError(error)) throw error
+      return { ...data.conversionReport, selecao: selecao.nome }
+    } catch (error) {
+      // Credencial, permissão ou limite não melhoram com outro formato.
+      if (!isQueryShapeError(error)) throw error
 
-        falhas.push({
-          selecao: selecao.nome,
-          codificacao,
-          erro: error instanceof Error ? error.message : String(error),
-        })
-      }
+      falhas.push({
+        selecao: selecao.nome,
+        erro: error instanceof Error ? error.message : String(error),
+      })
     }
   }
 
@@ -242,37 +235,31 @@ async function fetchPage(
 }
 
 /**
- * Percorre todas as páginas antes de devolver.
+ * Coleta de página única.
  *
- * O scrollId da Shopee vale cerca de 30 segundos, então nada de gravar no
- * banco entre uma página e outra: a escrita atrasaria a próxima chamada e o
- * cursor expiraria no meio da coleta, truncando sem erro visível.
+ * A paginação por cursor dependia de pageInfo.scrollId, e selecionar pageInfo
+ * derrubava a consulta inteira porque a Shopee devolve null num campo que ela
+ * própria declara não nulo. Sem cursor, resta pedir um limite alto e avisar
+ * quando a resposta vier cheia, já que aí pode haver mais.
  */
 export async function fetchConversions(
   credentials: ShopeeCredentials,
   start: Date,
   end: Date
 ): Promise<{ nodes: ConversionNode[]; truncated: boolean; selecao: string }> {
-  const inicio = Math.floor(start.getTime() / 1000)
-  const fim = Math.floor(end.getTime() / 1000)
+  const resultado = await fetchPage(
+    credentials,
+    Math.floor(start.getTime() / 1000),
+    Math.floor(end.getTime() / 1000)
+  )
 
-  const nodes: ConversionNode[] = []
-  let scrollId: string | null = null
-  let selecao = 'completa'
+  const nodes = resultado.nodes || []
 
-  for (let pagina = 0; pagina < MAX_PAGES; pagina++) {
-    const resultado = await fetchPage(credentials, inicio, fim, scrollId)
-    const recebidos = resultado.nodes || []
-
-    nodes.push(...recebidos)
-    scrollId = resultado.pageInfo?.scrollId ?? null
-    selecao = resultado.selecao
-
-    if (recebidos.length < PAGE_SIZE) return { nodes, truncated: false, selecao }
-    if (!scrollId) return { nodes, truncated: true, selecao }
+  return {
+    nodes,
+    truncated: nodes.length >= PAGE_SIZE,
+    selecao: resultado.selecao,
   }
-
-  return { nodes, truncated: true, selecao }
 }
 
 export function credentialsOf(account: {
