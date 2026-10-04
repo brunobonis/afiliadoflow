@@ -111,34 +111,45 @@ async function main() {
     displayOrderStatus: 'DisplayOrderStatus',
   }
 
-  const selecoes = Object.entries(alvos)
-    .map(
-      ([alias, nome]) =>
-        `${alias}: __type(name: "${nome}") { name kind enumValues { name } inputFields { name type { ${TYPE_REF} } } fields { name type { ${TYPE_REF} } } }`
+  /**
+   * Uma requisicao por tipo. A consulta unica e grande falhou silenciosamente;
+   * requisicoes pequenas sao o formato que a API aceita.
+   */
+  async function introspect(nome) {
+    const resposta = await call(
+      appId,
+      secret,
+      `{ __type(name: "${nome}") { name kind enumValues { name } inputFields { name type { ${TYPE_REF} } } fields { name args { name type { ${TYPE_REF} } } type { ${TYPE_REF} } } } }`
     )
-    .join('\n')
 
-  // A assinatura de conversionReport e de generateShortLink saem da raiz.
-  const raiz = `
-    query: __type(name: "Query") { fields { name args { name type { ${TYPE_REF} } } type { ${TYPE_REF} } } }
-    mutation: __type(name: "Mutation") { fields { name args { name type { ${TYPE_REF} } } type { ${TYPE_REF} } } }
-  `
+    if (resposta.errors) {
+      console.log(`\n--- ${nome} ---`)
+      console.log(`  ERRO: ${resposta.errors[0]?.message || JSON.stringify(resposta.errors)}`)
+      return null
+    }
 
-  const resposta = await call(appId, secret, `{ ${raiz}\n${selecoes} }`)
+    // Sem data e sem errors significa resposta fora do padrao; mostrar crua em
+    // vez de fingir que o tipo nao existe.
+    if (!resposta.data) {
+      console.log(`\n--- ${nome} ---`)
+      console.log(`  RESPOSTA INESPERADA: ${JSON.stringify(resposta).slice(0, 400)}`)
+      return null
+    }
 
-  if (resposta.errors) {
-    console.error('Erro da Shopee:', JSON.stringify(resposta.errors, null, 2))
-    process.exit(1)
+    return resposta.data.__type
   }
 
-  const d = resposta.data || {}
+  // As assinaturas de conversionReport e generateShortLink saem da raiz.
+  for (const [raiz, nomes] of [
+    ['Query', ['conversionReport']],
+    ['Mutation', ['generateShortLink', 'generateBatchShortLink']],
+  ]) {
+    const tipo = await introspect(raiz)
 
-  for (const nome of ['conversionReport', 'generateShortLink', 'generateBatchShortLink']) {
-    const campo =
-      d.query?.fields?.find((f) => f.name === nome) ||
-      d.mutation?.fields?.find((f) => f.name === nome)
+    for (const nome of nomes) {
+      const campo = tipo?.fields?.find((f) => f.name === nome)
+      if (!campo) continue
 
-    if (campo) {
       const args = (campo.args || []).map((a) => `${a.name}: ${typeName(a.type)}`).join('\n    ')
       console.log(`\n--- ASSINATURA ${nome} ---`)
       console.log(`  retorna: ${typeName(campo.type)}`)
@@ -146,8 +157,8 @@ async function main() {
     }
   }
 
-  for (const [alias, nome] of Object.entries(alvos)) {
-    printType(nome, d[alias])
+  for (const nome of Object.values(alvos)) {
+    printType(nome, await introspect(nome))
   }
 
   console.log('\nPronto. Cole a saida no chat.')
