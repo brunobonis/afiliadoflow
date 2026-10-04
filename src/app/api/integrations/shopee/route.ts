@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/auth'
 import { encryptSecret, encryptionConfigured } from '@/lib/crypto'
-import { fetchConversions } from '@/lib/shopee-sync'
+import { fetchConversions, isQueryShapeError } from '@/lib/shopee-sync'
 import { ShopeeApiError } from '@/lib/shopee'
 
 export async function GET(request: NextRequest) {
@@ -69,10 +69,10 @@ export async function POST(request: NextRequest) {
       await fetchConversions({ appId, appSecret }, inicio, fim)
     } catch (error) {
       if (error instanceof ShopeeApiError) {
-        // "wrong type" e afins são erro de validação da consulta, não de
-        // credencial: dizer "credenciais recusadas" mandaria você conferir
-        // AppId e Secret que estão corretos.
-        const credencial = error.code !== undefined
+        // A presença de código numérico não distingue os casos: "got null for
+        // non-null" chega com código 10010 e não tem relação com AppId ou
+        // Secret. Classificar por código mandava conferir credencial correta.
+        const credencial = !isQueryShapeError(error)
 
         return NextResponse.json(
           {

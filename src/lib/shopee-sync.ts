@@ -16,7 +16,38 @@ import {
  * mas voltam null, e selecioná-los faz a resposta inteira falhar com
  * "got null for non-null".
  */
-const CONVERSION_REPORT_QUERY = `
+/**
+ * A Shopee declara vários campos como não nulos e devolve null neles, o que
+ * derruba a resposta inteira com "got null for non-null". completeTime é o
+ * caso mais provável: fica nulo enquanto a comissão não confirma.
+ *
+ * Por isso duas seleções: a rica, e uma mínima para quando a rica falhar.
+ * Melhor perder colunas do que não sincronizar venda nenhuma.
+ */
+const ITEM_FIELDS_RICH = `
+  itemId
+  modelId
+  itemName
+  imageUrl
+  shopName
+  qty
+  actualAmount
+  itemTotalCommission
+  categoryLv1Name
+  channelType
+  attributionType
+`
+
+const ITEM_FIELDS_MINIMAL = `
+  itemId
+  modelId
+  itemName
+  qty
+  actualAmount
+  itemTotalCommission
+`
+
+const buildQuery = (itemFields: string) => `
   query ConversionReport($start: Int64, $end: Int64, $limit: Int, $scrollId: String) {
     conversionReport(
       purchaseTimeStart: $start
@@ -45,24 +76,7 @@ const CONVERSION_REPORT_QUERY = `
           orderStatus
           shopType
           items {
-            itemId
-            modelId
-            itemName
-            imageUrl
-            shopName
-            qty
-            itemPrice
-            actualAmount
-            refundAmount
-            itemTotalCommission
-            itemCommission
-            completeTime
-            displayItemStatus
-            categoryLv1Name
-            channelType
-            attributionType
-            campaignType
-            campaignPartnerName
+            ${itemFields}
           }
         }
       }
@@ -70,25 +84,19 @@ const CONVERSION_REPORT_QUERY = `
   }
 `
 
+/** Opcionais são os que só existem na seleção rica; na mínima não vêm. */
 interface ConversionItem {
   itemId: string | number
   modelId: string | number
   itemName: string
-  imageUrl: string
-  shopName: string
   qty: number
-  itemPrice: string
   actualAmount: string
-  refundAmount: string
   itemTotalCommission: string
-  itemCommission: string
-  completeTime: number
-  displayItemStatus: string
-  categoryLv1Name: string | null
-  channelType: string
-  attributionType: string
-  campaignType: string
-  campaignPartnerName: string
+  imageUrl?: string
+  shopName?: string
+  categoryLv1Name?: string | null
+  channelType?: string
+  attributionType?: string
 }
 
 interface ConversionOrder {
@@ -138,11 +146,17 @@ interface ConversionPage {
   }
 }
 
-/** Erro de validação da consulta, não de credencial — vale tentar outra forma. */
-function isTypeError(error: unknown): boolean {
+/**
+ * Erro de formato da consulta, não de credencial. A presença de um código
+ * numérico não distingue os dois: "got null for non-null" chega com o código
+ * 10010 e nada tem a ver com AppId ou Secret.
+ */
+export function isQueryShapeError(error: unknown): boolean {
   return (
     error instanceof ShopeeApiError &&
-    /wrong type|invalid type|cannot represent|expected type/i.test(error.message)
+    /wrong type|invalid type|cannot represent|expected type|got null for non-null/i.test(
+      error.message
+    )
   )
 }
 
@@ -157,27 +171,31 @@ async function fetchPage(
    * documentada. Em produção a string funcionou, mas o fallback fica porque a
    * alternativa é falhar inteiro por uma suposição.
    */
-  const tentativas: Array<Record<string, unknown>> = [
-    { start: String(start), end: String(end), limit: PAGE_SIZE, scrollId },
-    { start, end, limit: PAGE_SIZE, scrollId },
-  ]
+  const tentativas: Array<{ query: string; variables: Record<string, unknown> }> = []
+
+  for (const itemFields of [ITEM_FIELDS_RICH, ITEM_FIELDS_MINIMAL]) {
+    tentativas.push(
+      { query: buildQuery(itemFields), variables: { start: String(start), end: String(end), limit: PAGE_SIZE, scrollId } },
+      { query: buildQuery(itemFields), variables: { start, end, limit: PAGE_SIZE, scrollId } }
+    )
+  }
 
   let ultimoErro: unknown
 
-  for (const variables of tentativas) {
+  for (const tentativa of tentativas) {
     try {
       const data = await shopeeGraphQL<ConversionPage>(
         credentials,
-        CONVERSION_REPORT_QUERY,
-        variables
+        tentativa.query,
+        tentativa.variables
       )
 
       return data.conversionReport
     } catch (error) {
       ultimoErro = error
 
-      // Credencial, permissão ou limite não melhoram com outra codificação.
-      if (!isTypeError(error)) throw error
+      // Credencial, permissão ou limite não melhoram com outro formato.
+      if (!isQueryShapeError(error)) throw error
     }
   }
 
@@ -250,6 +268,7 @@ function linhasDe(node: ConversionNode, workspaceId: string, shopeeAccountId: st
   const subId = node.utmContent || null
 
   const origem = subId ? 'shopee_subid' : node.referrer ? 'shopee_referrer' : 'unattributed'
+  const status = mapStatus(node.conversionStatus)
 
   return (node.orders || []).flatMap((order) =>
     (order.items || []).map((item) => ({
@@ -262,9 +281,9 @@ function linhasDe(node: ConversionNode, workspaceId: string, shopeeAccountId: st
         orderNumber: order.orderId,
         subId,
         amount: parseMoney(item.actualAmount),
-        commission: parseMoney(item.itemTotalCommission ?? item.itemCommission),
+        commission: parseMoney(item.itemTotalCommission),
         quantity: Number(item.qty) || 1,
-        status: mapStatus(item.displayItemStatus || node.conversionStatus),
+        status,
         attributionSource: origem,
         productName: item.itemName || null,
         productImage: item.imageUrl || null,
@@ -277,7 +296,10 @@ function linhasDe(node: ConversionNode, workspaceId: string, shopeeAccountId: st
         attributionType: item.attributionType || null,
         categoryName: item.categoryLv1Name || null,
         purchasedAt,
-        confirmedAt: parseEpochSeconds(item.completeTime),
+        // item.completeTime seria a data exata da confirmação, mas vem null
+        // enquanto a comissão não confirma — e, sendo declarado Int64!, isso
+        // derruba a consulta inteira. Aproximamos pela data da compra.
+        confirmedAt: status === 'confirmed' ? purchasedAt : null,
         shopeeData: { conversion: node, order, item } as unknown as object,
       },
     }))
