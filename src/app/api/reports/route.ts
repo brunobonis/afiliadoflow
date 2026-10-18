@@ -86,6 +86,7 @@ export async function GET(request: NextRequest) {
         commission: true,
         quantity: true,
         productName: true,
+        subId: true,
         categoryName: true,
         channelType: true,
         referrer: true,
@@ -123,6 +124,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       totais,
+      // Agrupamento por sub_id: a etiqueta que voce coloca no link da
+      // Shopee volta aqui no utmContent, e e o que liga a venda ao
+      // anuncio que a gerou, sem precisar de redirecionamento proprio.
+      porSubId: agrupar(vendas, (v) => v.subId),
       porProduto: agrupar(vendas, (v) => v.productName).slice(0, 50),
       porOrigem: agrupar(vendas, (v) => v.channelType || v.referrer),
       porCategoria: agrupar(vendas, (v) => v.categoryName),

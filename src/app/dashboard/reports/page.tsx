@@ -21,6 +21,7 @@ interface Relatorio {
     comissaoConfirmada: number
     comissaoPendente: number
   }
+  porSubId: Agrupamento[]
   porProduto: Agrupamento[]
   porOrigem: Agrupamento[]
   porCategoria: Agrupamento[]
@@ -351,6 +352,15 @@ export default function ReportsPage() {
               </p>
             </div>
           </div>
+
+          {relatorio.porSubId.length > 0 && (
+            <Tabela
+              titulo="Desempenho por sub_id"
+              descricao="A etiqueta que você colocou no link da Shopee — é o que liga a venda ao anúncio"
+              dados={relatorio.porSubId}
+              rotuloColuna="Sub_id"
+            />
+          )}
 
           <Tabela
             titulo="Desempenho por produto"
