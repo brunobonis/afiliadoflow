@@ -11,7 +11,9 @@ export async function GET(request: NextRequest) {
       include: {
         _count: {
           select: {
-            events: true,
+            // Só acesso de pessoa. Robô de pré-visualização não é clique, e
+            // somá-lo aqui inflava o total de cada link na listagem.
+            events: { where: { isBot: false } },
             sales: true
           },
         },

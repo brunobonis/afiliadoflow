@@ -39,25 +39,20 @@ export default function LinkDetailsPage() {
 
   const [link, setLink] = useState<LinkDetails | null>(null)
   const [clicks, setClicks] = useState<ClickEvent[]>([])
-  const [automatizados, setAutomatizados] = useState(0)
-  const [mostrarBots, setMostrarBots] = useState(false)
   const [originStats, setOriginStats] = useState<OriginStats[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Depende de mostrarBots: marcar a caixa precisa rebuscar, porque a
-  // lista completa vem do servidor, não de um filtro local.
   useEffect(() => {
     if (shortCode) {
       loadLinkDetails()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shortCode, mostrarBots])
+  }, [shortCode])
 
   async function loadLinkDetails() {
     try {
       const [linkRes, clicksRes, statsRes] = await Promise.all([
         fetch(`/api/links/${shortCode}`),
-        fetch(`/api/links/${shortCode}/clicks${mostrarBots ? '?bots=1' : ''}`),
+        fetch(`/api/links/${shortCode}/clicks`),
         fetch(`/api/links/${shortCode}/origin-stats`),
       ])
 
@@ -66,10 +61,8 @@ export default function LinkDetailsPage() {
       const statsData = await statsRes.json()
 
       setLink(linkData)
-      // A rota passou a devolver {clicks, totais} para poder informar
-      // quantos acessos automatizados foram escondidos.
+      // A rota devolve {clicks, totais}; só a lista já filtrada interessa.
       setClicks(Array.isArray(clicksData) ? clicksData : clicksData.clicks || [])
-      setAutomatizados(clicksData.totalAutomatizados || 0)
       setOriginStats(statsData)
     } catch (error) {
       console.error('Error loading link details:', error)
@@ -206,20 +199,6 @@ export default function LinkDetailsPage() {
               <span className="ml-2 text-sm font-normal text-slate-400">({clicks.length})</span>
             )}
           </h2>
-          {automatizados > 0 && (
-            <label
-              className="flex items-center gap-2 cursor-pointer text-xs text-slate-400 hover:text-slate-200"
-              title="Rastreadores e pré-visualizações de link, como o robô do Facebook. Ficam fora das contagens porque distorceriam a taxa de conversão."
-            >
-              <input
-                type="checkbox"
-                checked={mostrarBots}
-                onChange={(e) => setMostrarBots(e.target.checked)}
-                className="w-3.5 h-3.5 bg-[#0F172A] border-slate-700 rounded text-[#38BDF8] focus:ring-2 focus:ring-[#38BDF8]"
-              />
-              Mostrar {automatizados} {automatizados === 1 ? 'acesso automatizado' : 'acessos automatizados'}
-            </label>
-          )}
         </div>
         {clicks.length === 0 ? (
           <p className="text-slate-400 text-sm">Nenhum acesso registrado ainda</p>
