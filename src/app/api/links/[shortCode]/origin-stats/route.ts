@@ -23,7 +23,9 @@ export async function GET(
 
     // Get origin statistics
     const events = await prisma.clickEvent.findMany({
-      where: { linkId: link.id },
+      // Sem o filtro, a origem 'não identificada' domina o gráfico só
+      // porque todo robô entra sem referenciador.
+      where: { linkId: link.id, isBot: false },
       select: { originType: true },
     })
 

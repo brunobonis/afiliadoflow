@@ -40,6 +40,9 @@ export async function GET(request: NextRequest) {
       clicks = await prisma.clickEvent.count({
         where: {
           workspaceId: session.workspaceId,
+          // Robô de pré-visualização não é visita: contá-lo afunda a taxa de
+          // conversão, que é vendas dividido por cliques.
+          isBot: false,
           link: {
             product: {
               shopeeAccountId: accountId,
@@ -49,7 +52,7 @@ export async function GET(request: NextRequest) {
       })
     } else {
       clicks = await prisma.clickEvent.count({
-        where: { workspaceId: session.workspaceId },
+        where: { workspaceId: session.workspaceId, isBot: false },
       })
     }
 

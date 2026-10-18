@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { isLikelyBot } from '@/lib/bot-detection'
 
 // Detect device type from user agent
 function detectDevice(userAgent: string): string {
@@ -78,13 +79,6 @@ function classifyOrigin(referer: string | null, urlParams: any): {
     originType: 'unknown',
     originConfidence: 'unknown',
   }
-}
-
-// Simple bot detection
-function isLikelyBot(userAgent: string): boolean {
-  const ua = userAgent.toLowerCase()
-  const botSignatures = ['bot', 'crawler', 'spider', 'crawling', 'meta-externalagent', 'whatsapp']
-  return botSignatures.some(sig => ua.includes(sig))
 }
 
 export async function GET(

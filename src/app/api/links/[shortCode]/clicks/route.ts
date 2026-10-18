@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/auth'
+import { isLikelyBot } from '@/lib/bot-detection'
 
 export async function GET(
   request: NextRequest,
@@ -9,25 +10,43 @@ export async function GET(
   try {
     const session = await requireAuth()
     const { shortCode } = await params
+    const { searchParams } = new URL(request.url)
 
     const link = await prisma.trackingLink.findFirst({
-      where: {
-        shortCode,
-        workspaceId: session.workspaceId,
-      },
+      where: { shortCode, workspaceId: session.workspaceId },
     })
 
     if (!link) {
       return NextResponse.json({ error: 'Link não encontrado' }, { status: 404 })
     }
 
-    const clicks = await prisma.clickEvent.findMany({
+    const eventos = await prisma.clickEvent.findMany({
       where: { linkId: link.id },
       orderBy: { clickedAt: 'desc' },
-      take: 50,
+      take: 200,
     })
 
-    return NextResponse.json(clicks)
+    /**
+     * Reclassifica na leitura, não confia só no isBot gravado: a lista de
+     * assinaturas melhorou depois que esses eventos entraram, e eventos
+     * antigos continuariam contados como pessoas.
+     */
+    const comClassificacao = eventos.map((evento) => ({
+      ...evento,
+      isBot: evento.isBot || isLikelyBot(evento.userAgent),
+    }))
+
+    const humanos = comClassificacao.filter((evento) => !evento.isBot)
+    const automatizados = comClassificacao.length - humanos.length
+
+    // O padrão é esconder automação, porque ela distorce taxa de conversão.
+    const incluirBots = searchParams.get('bots') === '1'
+
+    return NextResponse.json({
+      clicks: (incluirBots ? comClassificacao : humanos).slice(0, 50),
+      totalHumanos: humanos.length,
+      totalAutomatizados: automatizados,
+    })
   } catch (error) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

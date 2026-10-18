@@ -39,6 +39,7 @@ export default function LinkDetailsPage() {
 
   const [link, setLink] = useState<LinkDetails | null>(null)
   const [clicks, setClicks] = useState<ClickEvent[]>([])
+  const [automatizados, setAutomatizados] = useState(0)
   const [originStats, setOriginStats] = useState<OriginStats[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -61,7 +62,10 @@ export default function LinkDetailsPage() {
       const statsData = await statsRes.json()
 
       setLink(linkData)
-      setClicks(clicksData)
+      // A rota passou a devolver {clicks, totais} para poder informar
+      // quantos acessos automatizados foram escondidos.
+      setClicks(Array.isArray(clicksData) ? clicksData : clicksData.clicks || [])
+      setAutomatizados(clicksData.totalAutomatizados || 0)
       setOriginStats(statsData)
     } catch (error) {
       console.error('Error loading link details:', error)
@@ -191,7 +195,17 @@ export default function LinkDetailsPage() {
 
       {/* Recent Clicks */}
       <div className="bg-[#1E293B] rounded-lg border border-slate-800 p-6">
-        <h2 className="text-lg font-semibold text-white mb-4">Acessos Recentes</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">Acessos Recentes</h2>
+          {automatizados > 0 && (
+            <span
+              className="text-xs text-slate-400"
+              title="Rastreadores, pré-visualizações de link e monitores. Contá-los distorceria a taxa de conversão."
+            >
+              {automatizados} {automatizados === 1 ? 'acesso automatizado oculto' : 'acessos automatizados ocultos'}
+            </span>
+          )}
+        </div>
         {clicks.length === 0 ? (
           <p className="text-slate-400 text-sm">Nenhum acesso registrado ainda</p>
         ) : (
