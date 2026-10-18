@@ -50,6 +50,7 @@ model User {
 
   workspaces    WorkspaceUser[]
   auditLogs     AuditLog[]
+  resetTokens   PasswordResetToken[]
 
   @@map("users")
 }
@@ -410,4 +411,22 @@ model AuditLog {
 
   @@index([workspaceId, createdAt])
   @@map("audit_logs")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+
+  // Guarda o hash, nao o token: se o banco vazar, os tokens em aberto nao
+  // podem ser usados para entrar nas contas.
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
