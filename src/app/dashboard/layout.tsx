@@ -34,7 +34,6 @@ export default async function DashboardLayout({
 
         <nav className="p-4 space-y-1">
           <NavLink href="/dashboard" icon="chart">Visão Geral</NavLink>
-          <NavLink href="/dashboard/links" icon="link">Meus Links</NavLink>
           <NavLink href="/dashboard/sales" icon="dollar">Vendas & Comissões</NavLink>
           <NavLink href="/dashboard/reports" icon="file">Relatórios</NavLink>
 
