@@ -19,8 +19,27 @@ function config() {
     // 465 é TLS implícito; 587 começa em claro e sobe para TLS.
     secure: port === 465,
     auth: { user, pass },
-    from: process.env.SMTP_FROM || user,
+    from: remetente(user),
   }
+}
+
+/**
+ * Monta o remetente como "AfiliadoFlow <endereco>".
+ *
+ * Sem o nome de exibicao, o cliente de email mostra o endereco cru na caixa de
+ * entrada, que parece mensagem automatica de origem duvidosa. O nome tambem
+ * nao e obrigacao de configuracao: se SMTP_FROM vier so com o endereco, ou nem
+ * vier, o nome padrao entra do mesmo jeito.
+ */
+function remetente(user: string) {
+  const configurado = process.env.SMTP_FROM?.trim()
+
+  // Ja veio no formato completo: respeita exatamente o que foi definido.
+  if (configurado?.includes('<')) return configurado
+
+  const nome = process.env.SMTP_FROM_NAME?.trim() || 'AfiliadoFlow'
+
+  return `${nome} <${configurado || user}>`
 }
 
 export function emailConfigurado(): boolean {
