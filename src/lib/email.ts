@@ -60,6 +60,8 @@ export function montarEmailDeRecuperacao(link: string, validadeMinutos: number) 
     '',
     `O link vale por ${validadeMinutos} minutos e só pode ser usado uma vez.`,
     'Se não foi você quem pediu, ignore esta mensagem: sua senha continua a mesma.',
+    '',
+    'Mensagem automática - esta caixa não recebe respostas.',
   ].join('\n')
 
   const html = `
@@ -76,8 +78,11 @@ export function montarEmailDeRecuperacao(link: string, validadeMinutos: number) 
       <p style="font-size: 13px; color: #64748b; line-height: 1.6; margin: 0 0 8px;">
         O link vale por ${validadeMinutos} minutos e só pode ser usado uma vez.
       </p>
-      <p style="font-size: 13px; color: #64748b; line-height: 1.6; margin: 0;">
+      <p style="font-size: 13px; color: #64748b; line-height: 1.6; margin: 0 0 16px;">
         Se não foi você quem pediu, ignore esta mensagem: sua senha continua a mesma.
+      </p>
+      <p style="font-size: 12px; color: #94a3b8; line-height: 1.6; margin: 0; padding-top: 12px; border-top: 1px solid #e2e8f0;">
+        Mensagem automática &mdash; esta caixa não recebe respostas.
       </p>
     </div>
   `
