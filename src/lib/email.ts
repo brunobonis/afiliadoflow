@@ -37,7 +37,7 @@ function remetente(user: string) {
   // Ja veio no formato completo: respeita exatamente o que foi definido.
   if (configurado?.includes('<')) return configurado
 
-  const nome = process.env.SMTP_FROM_NAME?.trim() || 'Afiliado Flow'
+  const nome = process.env.SMTP_FROM_NAME?.trim() || 'AfiliadoFlow'
 
   return `${nome} <${configurado || user}>`
 }
