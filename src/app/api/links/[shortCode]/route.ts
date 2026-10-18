@@ -18,7 +18,9 @@ export async function GET(
       include: {
         _count: {
           select: {
-            events: true,
+            // Conta só acesso de pessoa: este número também alimenta a taxa
+            // de conversão da tela, e robô no divisor a afunda sem motivo.
+            events: { where: { isBot: false } },
             sales: true,
           },
         },

@@ -40,20 +40,24 @@ export default function LinkDetailsPage() {
   const [link, setLink] = useState<LinkDetails | null>(null)
   const [clicks, setClicks] = useState<ClickEvent[]>([])
   const [automatizados, setAutomatizados] = useState(0)
+  const [mostrarBots, setMostrarBots] = useState(false)
   const [originStats, setOriginStats] = useState<OriginStats[]>([])
   const [loading, setLoading] = useState(true)
 
+  // Depende de mostrarBots: marcar a caixa precisa rebuscar, porque a
+  // lista completa vem do servidor, não de um filtro local.
   useEffect(() => {
     if (shortCode) {
       loadLinkDetails()
     }
-  }, [shortCode])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shortCode, mostrarBots])
 
   async function loadLinkDetails() {
     try {
       const [linkRes, clicksRes, statsRes] = await Promise.all([
         fetch(`/api/links/${shortCode}`),
-        fetch(`/api/links/${shortCode}/clicks`),
+        fetch(`/api/links/${shortCode}/clicks${mostrarBots ? '?bots=1' : ''}`),
         fetch(`/api/links/${shortCode}/origin-stats`),
       ])
 
@@ -203,12 +207,18 @@ export default function LinkDetailsPage() {
             )}
           </h2>
           {automatizados > 0 && (
-            <span
-              className="text-xs text-slate-400"
-              title="Rastreadores, pré-visualizações de link e monitores. Contá-los distorceria a taxa de conversão."
+            <label
+              className="flex items-center gap-2 cursor-pointer text-xs text-slate-400 hover:text-slate-200"
+              title="Rastreadores e pré-visualizações de link, como o robô do Facebook. Ficam fora das contagens porque distorceriam a taxa de conversão."
             >
-              {automatizados} {automatizados === 1 ? 'acesso automatizado oculto' : 'acessos automatizados ocultos'}
-            </span>
+              <input
+                type="checkbox"
+                checked={mostrarBots}
+                onChange={(e) => setMostrarBots(e.target.checked)}
+                className="w-3.5 h-3.5 bg-[#0F172A] border-slate-700 rounded text-[#38BDF8] focus:ring-2 focus:ring-[#38BDF8]"
+              />
+              Mostrar {automatizados} {automatizados === 1 ? 'acesso automatizado' : 'acessos automatizados'}
+            </label>
           )}
         </div>
         {clicks.length === 0 ? (
