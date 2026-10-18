@@ -43,7 +43,9 @@ export async function GET(
     const incluirBots = searchParams.get('bots') === '1'
 
     return NextResponse.json({
-      clicks: (incluirBots ? comClassificacao : humanos).slice(0, 50),
+      // Devolve tudo que foi buscado: a tela rola, então cortar aqui só
+      // esconderia registro sem o usuário saber que existe.
+      clicks: incluirBots ? comClassificacao : humanos,
       totalHumanos: humanos.length,
       totalAutomatizados: automatizados,
     })

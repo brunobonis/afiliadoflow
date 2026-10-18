@@ -196,7 +196,12 @@ export default function LinkDetailsPage() {
       {/* Recent Clicks */}
       <div className="bg-[#1E293B] rounded-lg border border-slate-800 p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">Acessos Recentes</h2>
+          <h2 className="text-lg font-semibold text-white">
+            Acessos Recentes
+            {clicks.length > 0 && (
+              <span className="ml-2 text-sm font-normal text-slate-400">({clicks.length})</span>
+            )}
+          </h2>
           {automatizados > 0 && (
             <span
               className="text-xs text-slate-400"
@@ -209,9 +214,11 @@ export default function LinkDetailsPage() {
         {clicks.length === 0 ? (
           <p className="text-slate-400 text-sm">Nenhum acesso registrado ainda</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[32rem]">
             <table className="w-full">
-              <thead className="border-b border-slate-700">
+              {/* Cabeçalho fixo: rolando uma lista longa, sem isso você perde
+                  de vista o que cada coluna significa. */}
+              <thead className="border-b border-slate-700 sticky top-0 bg-[#1E293B] z-10">
                 <tr>
                   <th className="text-left py-3 px-4 text-xs text-slate-400 font-medium">Data/Hora</th>
                   <th className="text-left py-3 px-4 text-xs text-slate-400 font-medium">Dispositivo</th>
@@ -220,7 +227,7 @@ export default function LinkDetailsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
-                {clicks.slice(0, 10).map((click) => (
+                {clicks.map((click) => (
                   <tr key={click.id} className="hover:bg-[#0F172A]">
                     <td className="py-3 px-4 text-sm text-white">
                       {new Date(click.clickedAt).toLocaleString('pt-BR')}
